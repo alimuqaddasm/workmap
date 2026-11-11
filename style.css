@@ -10,7 +10,7 @@
   --s:#0e8a7e; --s-0:#e6e9e4; --s-1:#c4e7e0; --s-2:#5fb8ac; --s-ink:#0b6b62;
   --l:#d99a1e; --l-1:#fbf0d6; --l-ink:#8a5f00;
   --m-with:#6d4fd1; --m-with-1:#ece7fb; --m-rev:#d1553a; --m-rev-1:#fbe7e1; --m-final:#2f8f4e; --m-final-1:#e2f3e7;
-  --font:Geist,"IBM Plex Sans",system-ui,sans-serif; --ur:"Noto Nastaliq Urdu","Jameel Noori Nastaleeq",serif;
+  --font:Geist,"IBM Plex Sans",system-ui,sans-serif; --ur:"Noto Nastaliq Urdu","Jameel Noori Nastaleeq",serif; --ur-c:Gulzar,"Noto Nastaliq Urdu",serif;
   --t-1:.8125rem; --t0:.9375rem; --t1:1.125rem; --t2:1.35rem; --t3:1.62rem; --t4:1.94rem;
   --r-1:8px; --r-2:12px; --r-3:18px; --dur:.18s;
   color-scheme:light;
@@ -38,7 +38,9 @@ h2{font-size:var(--t2);font-weight:650;letter-spacing:-.02em;text-wrap:balance}
 h3{font-size:var(--t1);font-weight:650}
 a{color:var(--s-ink);text-underline-offset:3px}
 button{font-family:inherit;font-size:inherit;color:inherit}
-.ur{font-family:var(--ur);direction:rtl;unicode-bidi:isolate;line-height:2.05}
+.ur{font-family:var(--ur-c);direction:rtl;unicode-bidi:isolate;line-height:1.75}
+/* large Urdu keeps Noto Nastaliq; every small or tight spot uses Gulzar */
+.next .ur.t,.babhead .ur.big,.atlas .ur,.colp .ph .ur{font-family:var(--ur);line-height:1.95}
 .muted{color:var(--muted)} .small{font-size:var(--t-1)}
 .err{color:var(--m-rev);font-weight:600}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -172,10 +174,10 @@ input[type=text],input[type=password]{font:inherit;color:var(--ink);background:v
 .bab:hover{background:var(--hover)}
 .bab[aria-pressed="true"]{background:var(--f-1)}
 .bab:focus-visible{outline:2px solid var(--f)}
-.bab .n{font-family:var(--ur);color:var(--muted);font-size:var(--t-1);line-height:2}
+.bab .n{font-family:var(--ur-c);color:var(--muted);font-size:var(--t-1);line-height:2}
 .bab[aria-pressed="true"] .n{color:var(--f-ink)}
 .bab .ttl{display:flex;flex-direction:column;gap:3px;min-width:0}
-.bab .ttl .ur{font-size:var(--t0);line-height:1.9}
+.bab .ttl .ur{font-size:1rem;line-height:1.8}
 .bab .ln{display:flex;align-items:center;gap:8px;direction:ltr}
 .bar{display:flex;height:4px;border-radius:2px;overflow:hidden;background:var(--line-2);flex:1}
 .bar span{display:block;height:100%}
@@ -199,7 +201,7 @@ input[type=text],input[type=password]{font:inherit;color:var(--ink);background:v
 .colp.l{background:var(--l-1);box-shadow:none}
 .frow{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:8px;align-items:center;border-top:1px solid var(--line-2);padding:2px 4px;border-radius:6px;transition:background-color var(--dur)}
 .frow .c{direction:ltr;font-size:11px;font-weight:600;color:var(--muted)}
-.frow .ur{font-size:var(--t-1)}
+.frow .ur{font-size:var(--t0)}
 .frow.hi{background:var(--f-1)}
 .frow.hi .c{color:var(--f-ink)}
 .scard{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:flex;flex-direction:column;gap:2px;border-radius:var(--r-2);padding:8px 10px;background:var(--hover);margin-bottom:6px;transition:box-shadow var(--dur),background-color var(--dur)}
@@ -210,7 +212,7 @@ input[type=text],input[type=password]{font:inherit;color:var(--ink);background:v
 .scard .r1{display:flex;justify-content:space-between;align-items:center;gap:6px}
 .scard .r1 .ur{font-size:12px;color:var(--muted);line-height:1.9}
 .scard .r1 .fr{direction:ltr;font-size:11px;color:var(--muted);font-weight:600}
-.scard .ur.t{font-size:var(--t0);line-height:1.9}
+.scard .ur.t{font-size:1.05rem;line-height:1.8}
 .scard .prog{height:4px;border-radius:2px;background:var(--line);overflow:hidden;direction:ltr}
 .scard .prog span{display:block;height:100%}
 .lcard{border-radius:var(--r-2);padding:10px 12px;display:flex;flex-direction:column;gap:2px;margin-bottom:8px;background:var(--panel)}
