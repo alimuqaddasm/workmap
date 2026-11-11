@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Maarif Work Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<nav class="top">
+  <div class="in">
+    <div class="brand-tabs">
+      <span class="brand"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 13 L10 8 L13 11 L16 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Maarif Work Map</span>
+      <div class="tabs" id="tabs" hidden>
+        <a href="#week" data-view="week">This week</a>
+        <a href="#map" data-view="map">Map</a>
+      </div>
+    </div>
+    <div class="nav-right">
+      <span id="made" class="muted small"></span>
+      <button type="button" id="forget" class="link" hidden>Forget my key</button>
+    </div>
+  </div>
+</nav>
+
+<main id="app">
+  <section id="connect" class="connect" hidden>
+    <h1>Connect your GitHub key</h1>
+    <p>This site holds no course data. It reads your progress from your private <b>hub</b> repo, with a key that stays in this browser only. Anyone else who opens this address sees this page and nothing more.</p>
+    <ol>
+      <li>On GitHub, open Settings, Developer settings, Personal access tokens, <b>Fine-grained tokens</b>, then Generate new token.</li>
+      <li>Repository access: <b>Only select repositories</b>, and pick <b>hub</b>.</li>
+      <li>Repository permissions: <b>Contents: Read and write</b>. Nothing else.</li>
+      <li>Generate it, copy it, and paste it here.</li>
+    </ol>
+    <form id="keyform">
+      <label for="key">GitHub key</label>
+      <div class="row">
+        <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+        <button type="submit" class="btn dark">Connect</button>
+      </div>
+      <p id="keyerr" class="err" hidden></p>
+    </form>
+  </section>
+
+  <section id="loading" class="loading" hidden><p>Reading your hub…</p></section>
+  <section id="fail" class="loading" hidden><p id="failmsg" class="err"></p><button type="button" class="btn" id="retry">Try again</button></section>
+
+  <section id="week" hidden></section>
+  <section id="map" hidden></section>
+</main>
+
+<div id="drawer" class="drawer" hidden role="dialog" aria-modal="true" aria-labelledby="dtitle">
+  <div class="scrim" data-close></div>
+  <aside class="panel" id="panel"></aside>
+</div>
+<div id="toast" class="toast" hidden role="status"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
