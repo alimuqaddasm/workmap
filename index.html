@@ -7,55 +7,42 @@
 <title>Maarif Work Map</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;550;600;650;700&family=Noto+Nastaliq+Urdu:wght@400;600;700&family=Gulzar&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;600;700&family=Gulzar&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="top">
-  <div class="in">
-    <div class="nav">
-      <a class="brand" href="#week"><svg viewBox="0 0 26 26" aria-hidden="true"><rect class="b1" width="26" height="26" rx="8"/><path class="b2" d="M6 17 L11 11 L14.5 14.5 L20 8" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>Work Map</a>
-      <nav class="tabs" id="tabs" aria-label="Views" hidden>
-        <a href="#week" data-view="week">This week</a>
-        <a href="#map" data-view="map">Map</a>
-      </nav>
-    </div>
-    <div class="meta"><span id="made" class="when"></span><button type="button" id="forget" class="link" hidden>Forget my key</button></div>
-  </div>
-</header>
+<section id="connect" class="solo" hidden>
+  <h1>Connect your GitHub key</h1>
+  <p class="muted">This site holds no course data. It reads your progress from your private hub repo with a key that stays in this browser. Anyone else who opens this address sees only this page.</p>
+  <ol>
+    <li>On GitHub, open Settings, Developer settings, Personal access tokens, Fine-grained tokens, and generate a new token.</li>
+    <li>Repository access: only select repositories, and pick hub.</li>
+    <li>Repository permissions: Contents, read and write. Nothing else.</li>
+    <li>Paste the token here.</li>
+  </ol>
+  <form id="keyform">
+    <label for="key">GitHub key</label>
+    <div class="r"><input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_"><button type="submit" class="btn dark">Connect</button></div>
+    <p id="keyerr" class="err" hidden></p>
+  </form>
+</section>
 
-<main>
-  <section id="connect" class="connect" hidden>
-    <h1>Connect your GitHub key</h1>
-    <p class="muted">This site holds no course data. It reads your progress from your private hub repo with a key that stays in this browser. Anyone else who opens this address sees only this page.</p>
-    <ol>
-      <li>On GitHub, open Settings, Developer settings, Personal access tokens, Fine-grained tokens, and generate a new token.</li>
-      <li>Repository access: only select repositories, and pick hub.</li>
-      <li>Repository permissions: Contents, read and write. Nothing else.</li>
-      <li>Paste the token here.</li>
-    </ol>
-    <form id="keyform">
-      <label for="key">GitHub key</label>
-      <div class="row"><input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_"><button type="submit" class="btn primary">Connect</button></div>
-      <p id="keyerr" class="err" hidden></p>
-    </form>
-  </section>
+<section id="fail" class="solo" hidden>
+  <h1>The hub could not be read</h1>
+  <p id="failmsg" class="err"></p>
+  <p class="muted">Check your connection and that the key still has access to the hub repo, then try again.</p>
+  <div class="r"><button type="button" class="btn dark" id="retry">Try again</button><button type="button" class="btn" id="rekey">Use another key</button></div>
+</section>
 
-  <section id="loading" class="page" hidden aria-busy="true" aria-label="Loading your hub">
-    <div class="sk" style="height:44px;width:240px"></div>
-    <div class="wk-grid"><div class="wk-main"><div class="sk" style="height:220px"></div><div class="sk" style="height:180px"></div></div><div class="sk" style="height:420px"></div></div>
-  </section>
+<div id="app" class="app" hidden>
+  <aside class="side" id="side"></aside>
+  <main class="main"><div class="wrap" id="view"></div></main>
+</div>
 
-  <section id="fail" class="connect" hidden>
-    <h1>The hub could not be read</h1>
-    <p id="failmsg" class="err"></p>
-    <p class="muted">Check your connection and that the key still has access to the hub repo, then try again.</p>
-    <div class="row"><button type="button" class="btn primary" id="retry">Try again</button><button type="button" class="btn" id="rekey">Use another key</button></div>
-  </section>
-
-  <section id="week" class="page" hidden></section>
-  <section id="map" class="page" hidden></section>
-</main>
+<div id="loading" class="app" hidden aria-busy="true" aria-label="Loading your hub">
+  <aside class="side"><div class="sk" style="height:30px;width:140px"></div><div class="sk" style="height:90px"></div><div class="sk" style="height:160px"></div></aside>
+  <main class="main"><div class="wrap"><div class="sk" style="height:60px;width:260px"></div><div class="sk" style="height:240px"></div><div class="sk" style="height:200px"></div></div></main>
+</div>
 <div id="toast" class="toast" hidden role="status" aria-live="polite"></div>
 <script src="app.js"></script>
 </body>
