@@ -48,7 +48,11 @@ async function gh(path, opts) {
 async function readJson(path) { const j = await gh(path); return { sha: j.sha, data: JSON.parse(b64dec(j.content)) }; }
 
 // ---------- data helpers ----------
-const S = { data: null, board: null, boardSha: null };
+const S = { data: null, board: null, boardSha: null, reading: null };
+// Reading Mode (the reading-mode site): full lesson text, read with this same key
+const RM = 'https://alimuqaddasm.github.io/reading-mode/';
+function readSabaq(cid, b, n) { const c = S.reading && S.reading.courses.find(x => x.id === cid); const bb = c && c.babs.find(x => x.n === b); const s = bb && bb.sabaq.find(x => x.n === n); return s ? { url: `${RM}#${cid}/${b}/${n}`, s } : null; }
+function readFasl(aid, b, fid) { const a = S.reading && S.reading.atlases.find(x => x.id === aid); const bb = a && a.babs.find(x => x.n === b); const f = bb && bb.fasls.find(x => x.id === fid); return f && f.parts.length ? `${RM}#${aid}/${b}/${f.parts[0].id}` : null; }
 const DEL = [['tc', 'Teacher Copy', 'write'], ['handout', 'Handout', 'write'], ['refined', 'Refined handout', 'ref'], ['proof', 'Print proof', 'ref'],
   ['main', 'Main deck', 'deck'], ['extra', 'Extra deck', 'deck'], ['qa', 'QA deck', 'deck'], ['tafseer', 'Tafseer', 'sup'], ['flow', 'Flowchart', 'sup'],
   ['research', 'Extra research', 'sup'], ['audio', 'Audio', 'media'], ['reader', 'Reader', 'media']];
@@ -80,6 +84,7 @@ async function load() {
   try {
     const [w, b] = await Promise.all([readJson('workmap.json'), readJson('board.json')]);
     S.data = w.data; S.board = b.data; S.boardSha = b.sha; if (!S.board.workmap) S.board.workmap = {};
+    try { S.reading = (await readJson('reading/index.json')).data; } catch (e) { S.reading = null; }
     route();
   } catch (e) {
     if (e.status === 401) { setKey(''); connect(e.message); return; }
@@ -154,7 +159,8 @@ function renderWeek() {
         h('span', { class: 'from', text: `from hub sabaq ${code(nx)}` + ((nx.H.fasls || []).length ? `, built on ${a.name} B${nx.b.from} ` + nx.H.fasls.map(u => 'F' + u.split('.')[1]).join(' and ') : '') })),
       h('div', { class: 'ready' }, h('span', { class: 'muted small', text: 'Ready for class when all four are done' }),
         h('div', { class: 'steps' }, READY.map(([k, n]) => { const ok = hasAny(has, k); return h('div', { class: 'step' + (ok ? ' ok' : '') }, h('i'), h('span', { text: (ok ? 'Done: ' : 'To do: ') + n })); }))),
-      h('a', { class: 'more', href: `#course?c=${nx.c.id}&b=${nx.b.n}&s=${sid(nx)}`, text: 'Open this sabaq' }),
+      h('span', { style: 'display:flex;gap:16px;flex-wrap:wrap' }, h('a', { class: 'more', href: `#course?c=${nx.c.id}&b=${nx.b.n}&s=${sid(nx)}`, text: 'Open this sabaq' }),
+        readSabaq(nx.c.id, nx.b.n, nx.H.h) ? h('a', { class: 'more', href: readSabaq(nx.c.id, nx.b.n, nx.H.h).url, target: '_blank', rel: 'noopener', text: 'Read it in Reading Mode' }) : null),
       planned.length > 1 ? h('div', { class: 'after' }, h('span', { class: 'muted small', text: 'After that' }),
         planned.slice(1, 4).map(x => h('a', { class: 'arow', href: `#course?c=${x.c.id}&b=${x.b.n}&s=${sid(x)}` }, ur(x.H.ur), h('span', { class: 'lcode', text: `${nextLabel(x)} · from S${x.H.h}` })))) : null));
   } else top.append(h('article', { class: 'panel' }, h('h2', { text: 'Next class' }), h('p', { class: 'empty', text: 'No class lesson is planned. Ask Claude to "teach ZM B1 S12 as L6" and it shows here.' })));
@@ -268,8 +274,10 @@ function detail(x) {
   const set = st => { const prev = mentorOf(x.c.id, x.b.n, x.H.h); const round = st === 'revising' ? ((prev && prev.round) || 0) + 1 : (prev && prev.round) || 0;
     saveMentor(x, st ? { status: st, round, note: note.value.trim(), updated: new Date().toISOString().slice(0, 16) } : null); };
   const btn = (cls, st, label) => h('button', { type: 'button', class: 'btn ' + cls, 'aria-pressed': m && m.status === st ? 'true' : 'false', onclick: () => set(st), text: label });
+  const rd = readSabaq(x.c.id, x.b.n, x.H.h);
   return h('div', { class: 'detail', id: 'detail', 'aria-label': `${code(x)} details` },
     h('div', { class: 'dcol' },
+      rd ? h('a', { class: 'readlink', href: rd.url, target: '_blank', rel: 'noopener' }, h('b', { text: 'Read the full sabaq' }), h('span', { text: `Reading Mode · ${rd.s.notes} editor notes · ${rd.s.q} open questions · ${rd.s.tc} teacher-only parts` })) : h('span', { class: 'small muted', text: 'Not in Reading Mode yet.' }),
       h('span', { class: 'dk', text: 'Has' }), chipsOf(x.H.has),
       h('span', { class: 'dk', text: missing.length ? 'Still to make for class' : 'Class-ready' }),
       missing.length ? h('div', { class: 'chips' }, missing.map(n => h('span', { class: 'dchip miss', text: n }))) : h('span', { class: 'small muted', text: 'Everything for class is made.' }),
@@ -324,7 +332,7 @@ function renderAtlas(p) {
   v.append(sec(h('h2', { class: 'bh' }, h('span', { text: `B${bab.n} Fasls` }), ur(bab.ur)), right,
     bab.note ? h('p', { class: 'note', text: bab.note }) : null,
     bab.fasls.length ? h('div', { class: 'panel list cols2' }, bab.fasls.map((f, i) => h('div', { class: 'frow' },
-      h('span', { class: 'fn', text: 'F' + f.id.split('.')[1] }), h('i', { class: 'dot f-' + st[i], title: F_WORD[st[i]] }), ur(f.ur), h('span', { class: 'fs', text: (use[f.id] || []).join(', ') }))))
+      readFasl(a.id, bab.n, f.id) ? h('a', { class: 'fn', href: readFasl(a.id, bab.n, f.id), target: '_blank', rel: 'noopener', title: 'Read this atlas lesson', text: 'F' + f.id.split('.')[1] }) : h('span', { class: 'fn', text: 'F' + f.id.split('.')[1] }), h('i', { class: 'dot f-' + st[i], title: F_WORD[st[i]] }), ur(f.ur), h('span', { class: 'fs', text: (use[f.id] || []).join(', ') }))))
       : h('div', { class: 'panel' }, h('p', { class: 'empty', text: a.state === 'done' ? 'No Fasls listed.' : 'Fasls are still being found by the atlas run.' }))));
   v.append(h('footer', { class: 'scholars' }, h('h2', { text: 'The four scholars' }), h('div', {},
     [['میرزا مہدی اصفہانی', '17 Arabic books'], ['آقائے حلبی', '212 lectures, 1 book'], ['آیت اللہ سید جعفر سیدان', '2,532 lectures, 14 books'], ['سید حسن افتخارزادہ', '3,122 lectures, 13 books']]
