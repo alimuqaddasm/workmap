@@ -1,4 +1,4 @@
-/* Maarif Work Map (v4 design). Reads workmap.json and board.json from the private hub repo with the viewer's own
+/* Maarif Work Map (v5 design). Reads workmap.json and board.json from the private hub repo with the viewer's own
    GitHub key (kept in this browser only). The mentor buttons write the `workmap` section of board.json.
    Place in the page lives in the address: #week?c=zm&s=zm-1-8, #course?c=zm&b=1&s=zm-1-8, #atlas?a=mahdaviyat&b=15. */
 (function () {
@@ -91,232 +91,258 @@ $('#keyform').addEventListener('submit', e => { e.preventDefault(); const v = $(
 $('#retry').addEventListener('click', load);
 $('#rekey').addEventListener('click', () => { setKey(''); connect(); });
 
-// ---------- sidebar ----------
-function side(view, p) {
+// ---------- top bar ----------
+function side(view) {
   const el = $('#side'); el.replaceChildren();
-  el.append(h('a', { class: 'brand', href: '#week' }, h('span', { class: 'mk' }, icon(16, 16, 'M2 11 L6 6 L9 9 L14 3', '2')), 'Work Map'));
-  el.append(h('nav', { class: 'snav', 'aria-label': 'Views' },
-    h('a', { href: '#week', 'aria-current': view === 'week' ? 'page' : null, text: 'This week' }),
-    h('a', { href: '#course', 'aria-current': view === 'course' ? 'page' : null, text: 'Courses' }),
-    h('a', { href: '#atlas', 'aria-current': view === 'atlas' ? 'page' : null, text: 'Atlases' })));
-  if (view === 'week' || view === 'course') {
-    const f = view === 'week' ? (p.get('c') || '') : (p.get('c') || 'zm');
-    el.append(h('div', { class: 'sgroup' }, h('span', { class: 'kick', text: 'Courses' }), S.data.courses.map(c => {
-      const hub = c.babs.reduce((n, b) => n + b.hub.length, 0);
-      const tc = c.babs.reduce((n, b) => n + b.hub.filter(H => stage(H.has) !== 'plan').length, 0);
-      const L = c.babs.reduce((n, b) => n + b.hub.filter(H => H.L && H.Ls !== 'planned').length, 0);
-      return h('button', { type: 'button', class: 'course', 'aria-pressed': f === c.id ? 'true' : 'false', title: `${tc} of ${hub} sabaq have a Teacher Copy`, onclick: () => view === 'week' ? go('week', { c: f === c.id ? '' : c.id }) : go('course', { c: c.id }) },
-        ring(hub ? tc / hub : 0), h('span', { class: 'tx' }, ur(c.ur), h('span', { class: 'm', text: `${c.babs.length} Babs, ${hub} S, ${L ? L + ' L taught' : tc + ' written'}` })));
-    }), view === 'course' ? [['mrf', 'معارف: مقدماتی گفتگو', 'Muqaddima, not from an atlas'], ['taz', 'Tazzakur', 'class LMM-01, weekly sessions']].map(([id, n, m]) =>
-      h('button', { type: 'button', class: 'course', 'aria-pressed': f === id ? 'true' : 'false', onclick: () => go('course', { c: id }) }, h('span', { style: 'width:26px' }), h('span', { class: 'tx' }, id === 'mrf' ? ur(n) : h('b', { style: 'font-size:14px', text: n }), h('span', { class: 'm', text: m })))) : null));
-  } else {
-    el.append(h('div', { class: 'sgroup' }, h('span', { class: 'kick', text: 'The four scholars' }),
-      [['میرزا مہدی اصفہانی', '17 Arabic books'], ['آقائے حلبی', '212 lectures, 1 book'], ['آیت اللہ سید جعفر سیدان', '2,532 lectures, 14 books'], ['سید حسن افتخارزادہ', '3,122 lectures, 13 books']]
-        .map(([n, s]) => h('div', { class: 'sch' }, ur(n), h('span', { text: s })))));
-  }
-  const sw = st => h('i', { class: 'sw', style: st });
-  el.append(h('div', { class: 'key' }, h('span', { class: 'kick', text: 'Colour key' }),
-    h('span', {}, sw('background:var(--f)'), 'Atlas Fasl (F): blue'), h('span', {}, sw('background:var(--s)'), 'Hub sabaq (S): teal'),
-    h('span', {}, sw('background:var(--l)'), 'Class lesson (L): gold'), h('span', {}, sw('background:linear-gradient(90deg,var(--s-1),var(--s))'), 'Lighter to darker: further along'),
-    h('span', {}, sw('background:var(--f-stripe)'), 'Striped: only on a branch'), h('span', {}, sw('background:var(--m-with)'), 'With mentor'),
-    h('span', {}, sw('background:var(--m-rev)'), 'Needs you: revising, decisions'), h('span', {}, sw('background:var(--m-final)'), 'Final')));
-  el.append(h('div', { class: 'foot' }, h('span', { class: 'when', text: `Updated from the repos ${S.data.made}` }),
-    h('button', { type: 'button', class: 'linkbtn', onclick: () => { setKey(''); S.data = null; connect('Your key was removed from this browser.'); }, text: 'Forget my key' })));
+  el.append(h('a', { class: 'brand', href: '#week' }, h('span', { class: 'mk' }, icon(16, 16, 'M2 11 L6 6 L9 9 L14 3', '2')), 'Work Map'),
+    h('nav', { class: 'tabs', 'aria-label': 'Views' },
+      h('a', { href: '#week', 'aria-current': view === 'week' ? 'page' : null, text: 'This week' }),
+      h('a', { href: '#course', 'aria-current': view === 'course' ? 'page' : null, text: 'Courses' }),
+      h('a', { href: '#atlas', 'aria-current': view === 'atlas' ? 'page' : null, text: 'Atlases' })),
+    h('span', { class: 'upd' }, h('span', { text: 'Updated ' + fmtWhen(S.data.made) }),
+      h('button', { type: 'button', class: 'linkbtn', onclick: () => { setKey(''); S.data = null; connect('Your key was removed from this browser.'); }, text: 'Forget my key' })));
 }
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function fmtWhen(t) { const m = /(\d{4})-(\d\d)-(\d\d)[ T](\d\d:\d\d)/.exec(t || ''); return m ? `${+m[3]} ${MON[+m[2] - 1]}, ${m[4]}` : (t || ''); }
+function fmtDay(t) { const m = /(\d{4})-(\d\d)-(\d\d)/.exec(t || ''); return m ? `${+m[3]} ${MON[+m[2] - 1]}` : t; }
+const hubState = s => (s || '').replace(/(\d{4})-(\d\d)-(\d\d)/, (x) => fmtDay(x));
 
-// ---------- the selected sabaq ----------
-function detail(x) {
-  const a = atlasOf(x.c.atlas); const m = mentorOf(x.c.id, x.b.n, x.H.h); const has = new Set(x.H.has);
-  const flow = h('div', { class: 'flow' });
-  (x.H.fasls || []).forEach(u => { const f = fasl(a, u); flow.append(h('div', { class: 'node f' }, h('span', { class: 'k', text: fcode(a, u) }), ur(f ? f.ur : ''))); });
-  if (!(x.H.fasls || []).length) flow.append(h('div', { class: 'node f' }, h('span', { class: 'k', text: `${a.name} B${x.b.from}` })));
-  flow.append(arrowD(), h('div', { class: 'node s' }, h('span', { class: 'k', text: `${code(x)}, ${STAGE_NAME[stage(x.H.has)]}` }), ur(x.H.ur)));
-  if (x.H.L) flow.append(arrowD(), h('div', { class: 'node l' }, h('span', { class: 'k', text: `${x.c.code} B${x.b.n} L${x.H.L}, ${x.H.Ls === 'planned' ? 'planned' : 'taught'}` })));
-  const note = h('input', { id: 'mnote', type: 'text', placeholder: 'What the mentor asked for', value: m && m.note ? m.note : '' });
-  const set = st => { const prev = mentorOf(x.c.id, x.b.n, x.H.h); const round = st === 'revising' ? ((prev && prev.round) || 0) + 1 : (prev && prev.round) || 0;
-    saveMentor(x, st ? { status: st, round, note: note.value.trim(), updated: new Date().toISOString().slice(0, 16) } : null); };
-  const b = (cls, st, label) => h('button', { type: 'button', class: 'btn ' + cls, 'aria-pressed': m && m.status === st ? 'true' : 'false', onclick: () => set(st), text: label });
-  return h('section', { class: 'card', id: 'detail', dir: 'ltr', 'aria-label': 'Selected sabaq' },
-    h('div', { class: 'ch' }, h('span', { class: 'kick', text: `Selected: ${code(x)}` }), m ? h('span', { class: 'tag ' + MK[m.status], text: mText(m) }) : null),
-    h('div', { class: 'dgrid' }, flow,
-      h('div', { style: 'display:flex;flex-direction:column;gap:14px' },
-        h('div', { style: 'display:flex;flex-direction:column;gap:6px' }, h('span', { class: 'kick', text: 'What it has' }),
-          h('div', { class: 'chips' }, DEL.map(([k, n, kind]) => h('span', { class: 'dchip ' + (has.has(k) ? kind : 'no'), text: n })))),
-        h('div', { style: 'display:flex;flex-direction:column;gap:8px' }, h('span', { class: 'kick', text: 'Mentor' }),
-          h('div', { class: 'mbtns' }, b('with', 'with mentor', 'Sent to mentor'), b('rev', 'revising', 'Mentor wants changes'), b('fin', 'final', 'Final'),
-            m ? h('button', { type: 'button', class: 'linkbtn', onclick: () => set(null), text: 'Clear' }) : null),
-          h('label', { for: 'mnote', class: 'small muted', text: "Mentor's note, saved with the next button you press" }), note,
-          m ? h('span', { class: 'small muted', text: `Last set ${m.updated} UTC` }) : null))));
+// ---------- shared pieces ----------
+const ST = ['cls', 'ref', 'tc', 'plan'];
+const ST_WORD = { cls: 'class-ready', ref: 'refined', tc: 'written', plan: 'listed only' };
+function tally(hubs) { const k = { cls: 0, ref: 0, tc: 0, plan: 0 }; hubs.forEach(H => k[stage(H.has)]++); return k; }
+function stageBar(k, cls) {
+  const tot = ST.reduce((n, s) => n + k[s], 0);
+  return h('span', { class: 'sbar' + (cls ? ' ' + cls : '') + (tot ? '' : ' empty'), 'aria-hidden': 'true' }, tot ? ST.map(s => k[s] ? h('span', { class: 'st-' + s, style: `width:${100 * k[s] / tot}%` }) : null) : null);
 }
+function stageText(k) { const tot = ST.reduce((n, s) => n + k[s], 0); return tot ? `${tot} sabaq: ` + ST.filter(s => k[s]).map(s => `${k[s]} ${ST_WORD[s]}`).join(', ') : 'Hub sabaq not drafted yet'; }
+function legend(items) { return h('span', { class: 'legend' }, items.map(([c, t]) => h('span', {}, h('i', { class: c }), t))); }
+const stageLegend = () => legend([['st-cls', 'Class-ready'], ['st-ref', 'Refined'], ['st-tc', 'Teacher Copy written'], ['st-plan', 'Listed only']]);
+const sec = (title, right, ...kids) => h('section', { class: 'sec' }, h('div', { class: 'sh' }, typeof title === 'string' ? h('h2', { text: title }) : title, right || null), kids);
+const nextLabel = x => `${x.c.code} B${x.b.n} L${x.H.L}`;
+const OTHERS = [['mrf', 'معارف: مقدماتی گفتگو', 'Muqaddima'], ['taz', 'تذکر', 'Tazzakur']];
+function courseSub(c) {
+  const a = atlasOf(c.atlas); const fr = c.babs.map(b => b.from);
+  const range = fr.length > 2 ? `B${fr[0]} to B${fr[fr.length - 1]}` : fr.map(n => 'B' + n).join(' and ');
+  return `${c.code} · from ${a ? a.name : c.atlas} ${range} · ${c.babs.length} Bab${c.babs.length === 1 ? '' : 's'}`;
+}
+function lessonTotals(c) { const all = c.babs.flatMap(b => b.hub); return { taught: all.filter(H => H.L && H.Ls !== 'planned').length, planned: all.filter(H => H.L && H.Ls === 'planned').length }; }
+
+// what a sabaq still needs before class
+const READY = [['tc', 'Teacher Copy'], ['handout', 'Handout'], [['refined', 'proof'], 'Refined and proofed'], [['main', 'extra'], 'Main deck']];
+const hasAny = (set, k) => (Array.isArray(k) ? k : [k]).some(x => set.has(x));
 
 // ---------- This week ----------
-function renderWeek(p) {
+function renderWeek() {
   const v = $('#view'); v.replaceChildren();
-  const f = p.get('c') || ''; const sel = findS(p.get('s'));
-  const pick = x => { S.scroll = true; go('week', { c: f, s: x ? sid(x) : '' }); };
-  const all = allS(f);
-  const planned = all.filter(x => x.H.L && x.H.Ls === 'planned').sort((a, b) => a.H.L - b.H.L);
-  const taught = all.filter(x => x.H.L && x.H.Ls !== 'planned').sort((a, b) => a.c.id.localeCompare(b.c.id) || a.H.L - b.H.L);
-  const with_ = all.filter(x => { const m = mentorOf(x.c.id, x.b.n, x.H.h); return m && m.status === 'with mentor'; });
-  const decisions = [];
-  all.forEach(x => { const m = mentorOf(x.c.id, x.b.n, x.H.h); if (m && m.status === 'revising') decisions.push({ x, b: `${code(x)}: mentor wants changes`, s: m.note || 'See the note on the sabaq' }); });
-  if (!f || f === 'zm') S.data.atlases.forEach(a => a.babs.forEach(b => { if (b.branch && (b.branch.counts.refined || 0) > 20) decisions.push({ b: `${a.name} B${b.n}: ${b.branch.counts.refined} Fasl lessons waiting for review`, s: 'Arabic checks and a decisions list, on a branch' }); }));
+  const all = allS();
+  const planned = all.filter(x => x.H.L && x.H.Ls === 'planned').sort((a, b) => a.c.id.localeCompare(b.c.id) || a.H.L - b.H.L);
+  const needs = waiting(all, planned);
+  const moving = S.data.courses.filter(c => c.babs.some(b => b.hub.length)).length;
   const date = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  v.append(h('header', { class: 'head' }, h('div', { style: 'display:flex;flex-direction:column;gap:4px' }, h('span', { class: 'date', text: date }), h('h1', { text: 'This week' })),
-    h('div', { class: 'seg', role: 'group', 'aria-label': 'Course' }, h('button', { type: 'button', 'aria-pressed': f ? 'false' : 'true', onclick: () => go('week', {}), text: 'All' }),
-      S.data.courses.map(c => h('button', { type: 'button', 'aria-pressed': f === c.id ? 'true' : 'false', onclick: () => go('week', { c: c.id }), text: c.code })))));
+  const say = [planned.length ? `${planned.length} class lesson${planned.length === 1 ? '' : 's'} planned` : 'No class lesson planned',
+    needs.length ? `${needs.length} thing${needs.length === 1 ? '' : 's'} waiting on you` : 'nothing waiting on you', `${moving} course${moving === 1 ? '' : 's'} moving`];
+  v.append(h('header', { class: 'head' }, h('h1', { text: date }), h('p', { class: 'lede', text: say.join(', ') + '.' })));
 
-  const bento = h('section', { class: 'bento' });
+  const top = h('section', { class: 'two' });
   const nx = planned[0];
   if (nx) {
-    const a = atlasOf(nx.c.atlas); const has = new Set(nx.H.has);
-    const need = [['tc', 'Teacher Copy'], ['handout', 'Handout'], ['refined', 'Refined handout'], ['proof', 'Print proof'], ['main', 'Main deck'], ['extra', 'Extra deck']];
-    bento.append(h('div', { class: 'hero span4' },
-      h('div', { class: 'top' }, h('span', { class: 'kick', text: 'Next class' }), h('span', { class: 'meta', text: `${nx.c.code} B${nx.b.n} L${nx.H.L}, from S${nx.H.h}, ${STAGE_NAME[stage(nx.H.has)]}` })),
-      ur(nx.H.ur, 't', 'p'),
-      h('div', { class: 'chain' }, (nx.H.fasls || []).length ? h('span', { class: 'pill f', text: `${a.name} B${nx.b.from} ` + nx.H.fasls.map(u => 'F' + u.split('.')[1]).join(', ') }) : null,
-        arrowL(), h('span', { class: 'pill s', text: code(nx) }), arrowL(), h('span', { class: 'pill l', text: `${nx.c.code} B${nx.b.n} L${nx.H.L}` })),
-      h('div', { class: 'needs' }, need.map(([k, n]) => h('span', { class: has.has(k) ? 'ok' : '', text: has.has(k) ? n + ' ✓' : n })),
-        h('button', { type: 'button', class: 'open', style: 'margin-left:auto', onclick: () => pick(nx), text: 'Open its details' }))));
-  } else bento.append(h('div', { class: 'card span4' }, h('span', { class: 'kick', text: 'Next class' }), h('p', { class: 'empty', text: 'No class lesson is planned. Ask Claude to "teach ZM B1 S12 as L6" and it shows here.' })));
-  bento.append(h('div', { class: 'stack span2' },
-    h('div', { class: 'card', style: 'flex:1' }, h('span', { class: 'kick', text: 'Then' }),
-      planned.length > 1 ? planned.slice(1, 4).map(x => h('button', { type: 'button', class: 'row', onclick: () => pick(x) }, h('span', { class: 'code', text: `${x.c.code} B${x.b.n} L${x.H.L}, from S${x.H.h}` }), ur(x.H.ur))) : h('p', { class: 'empty', text: 'Nothing more is planned yet.' })),
-    h('div', { class: 'needsyou' }, h('span', { class: 'kick', text: 'Needs you' }),
-      decisions.length ? decisions.slice(0, 3).map(d => h(d.x ? 'button' : 'div', { class: 'it', type: d.x ? 'button' : null, style: d.x ? 'all:unset;cursor:pointer;display:flex;flex-direction:column' : null, onclick: d.x ? () => pick(d.x) : null }, h('b', { text: d.b }), h('span', { class: 's2', text: d.s }))) : h('span', { class: 's2', text: 'Nothing is waiting for you.' }))));
-  bento.append(h('div', { class: 'card span3' }, h('div', { class: 'ch' }, h('span', { class: 'kick', text: 'Class lessons taught' }), h('span', { class: 'small muted', text: S.data.courses.map(c => `${c.code} ${taught.filter(x => x.c.id === c.id).length}`).filter(s => !s.endsWith(' 0')).join(', ') })),
-    taught.length ? taught.map(x => h('button', { type: 'button', class: 'taught', onclick: () => pick(x) }, h('span', { class: 'Lb', text: 'L' + x.H.L }), ur(x.H.ur), h('span', { class: 'c', text: code(x) }))) : h('p', { class: 'empty', text: 'No class lesson is marked taught yet.' })));
+    const has = new Set(nx.H.has); const a = atlasOf(nx.c.atlas);
+    top.append(h('article', { class: 'panel next' },
+      h('div', { class: 'ph' }, h('h2', { text: 'Next class' }), h('span', { class: 'ltag', text: nextLabel(nx) })),
+      h('div', { class: 'nt' }, ur(nx.H.ur, 'big', 'p'),
+        h('span', { class: 'from', text: `from hub sabaq ${code(nx)}` + ((nx.H.fasls || []).length ? `, built on ${a.name} B${nx.b.from} ` + nx.H.fasls.map(u => 'F' + u.split('.')[1]).join(' and ') : '') })),
+      h('div', { class: 'ready' }, h('span', { class: 'muted small', text: 'Ready for class when all four are done' }),
+        h('div', { class: 'steps' }, READY.map(([k, n]) => { const ok = hasAny(has, k); return h('div', { class: 'step' + (ok ? ' ok' : '') }, h('i'), h('span', { text: (ok ? 'Done: ' : 'To do: ') + n })); }))),
+      h('a', { class: 'more', href: `#course?c=${nx.c.id}&b=${nx.b.n}&s=${sid(nx)}`, text: 'Open this sabaq' }),
+      planned.length > 1 ? h('div', { class: 'after' }, h('span', { class: 'muted small', text: 'After that' }),
+        planned.slice(1, 4).map(x => h('a', { class: 'arow', href: `#course?c=${x.c.id}&b=${x.b.n}&s=${sid(x)}` }, ur(x.H.ur), h('span', { class: 'lcode', text: `${nextLabel(x)} · from S${x.H.h}` })))) : null));
+  } else top.append(h('article', { class: 'panel' }, h('h2', { text: 'Next class' }), h('p', { class: 'empty', text: 'No class lesson is planned. Ask Claude to "teach ZM B1 S12 as L6" and it shows here.' })));
+  top.append(h('article', { class: 'panel' }, h('h2', { text: 'Waiting on you' }),
+    needs.length ? h('ul', { class: 'needs' }, needs.map(n => h('li', {}, h('i'), h('span', {}, n.href ? h('a', { href: n.href, text: n.t }) : h('b', { text: n.t }), h('span', { text: n.d })))))
+      : h('p', { class: 'empty', text: 'Nothing is waiting on you.' })));
+  v.append(top);
+
+  const tb = h('tbody');
+  S.data.courses.forEach(c => {
+    const k = tally(c.babs.flatMap(b => b.hub)); const L = lessonTotals(c);
+    const nxc = planned.find(x => x.c.id === c.id);
+    tb.append(h('tr', {},
+      h('td', {}, h('a', { class: 'cname', href: '#course?c=' + c.id }, ur(c.ur, 'big'), h('span', { text: courseSub(c) }))),
+      h('td', {}, stageBar(k), h('span', { class: 'cnt', text: stageText(k) })),
+      h('td', {}, h('b', { class: 'lnum', text: L.taught ? `${L.taught} taught` : 'None yet' }),
+        h('span', { class: 'cnt', text: L.planned ? `${L.planned} planned${nxc ? ', L' + nxc.H.L + ' next' : ''}` : 'no lesson planned' }))));
+  });
+  const others = h('div', { class: 'others' }, OTHERS.map(([id, n, en]) => h('a', { href: '#course?c=' + id }, ur(n), h('span', { text: id === 'mrf' ? `${en}, ${S.data.muqaddima.lessons.length} lessons, own source book` : `${en}, ${S.data.tazzakur.sessions.length} sessions, last on ${fmtDay((S.data.tazzakur.sessions.slice(-1)[0] || {}).date)}` }))));
+  v.append(sec('Where each course stands', stageLegend(), h('div', { class: 'panel flush' }, h('div', { class: 'scroll' }, h('table', { class: 'ctable' },
+    h('thead', {}, h('tr', {}, h('th', { scope: 'col', text: 'Course' }), h('th', { scope: 'col', text: 'Hub sabaq, by stage' }), h('th', { scope: 'col', text: 'Class lessons' }))), tb)), others)));
+
   const ch = S.data.changes || [];
-  bento.append(h('div', { class: 'card span3' }, h('div', { class: 'ch' }, h('span', { class: 'kick', text: 'Changed in the last day' }), h('span', { class: 'small muted', text: `${ch.length} branches` })),
-    ch.length ? ch.slice(0, 5).map(c => h('div', { class: 'chg' }, h('i', { class: c.ref === 'main' ? '' : 'br' }), h('span', { text: `${c.repo}${c.ref === 'main' ? '' : ', branch ' + c.ref}: ${c.last}` }), h('em', { text: c.when.slice(11) }))) : h('p', { class: 'empty', text: 'No commits in the last 24 hours.' })));
-  v.append(bento);
-
-  const rows = h('div', { style: 'display:flex;flex-direction:column;gap:16px' });
-  S.data.courses.filter(c => !f || c.id === f).forEach(c => c.babs.forEach(b => {
-    if (!b.hub.length) return;
-    const a = atlasOf(c.atlas); const ab = a.babs.find(x => x.n === b.from);
-    const done = b.hub.filter(H => ['ref', 'cls'].includes(stage(H.has))).length;
-    rows.append(h('div', { class: 'hrow' }, h('div', { class: 'nm' }, h('b', { text: `${c.code} B${b.n}` }), ur(ab ? ab.ur : '')),
-      h('div', { class: 'cells', role: 'group', 'aria-label': `${c.code} B${b.n}` }, b.hub.map(H => {
-        const x = { c, b, H }; const m = mentorOf(c.id, b.n, H.h); const st = stage(H.has);
-        return h('button', { type: 'button', class: `cell ${st}${H.L ? ' L' : ''}`, title: H.ur, 'aria-pressed': sel && sid(sel) === sid(x) ? 'true' : 'false',
-          'aria-label': `${code(x)}, ${STAGE_NAME[st]}${H.L ? ', class lesson L' + H.L : ''}${m ? ', ' + mText(m) : ''}`, onclick: () => pick(x) }, String(H.h), m ? h('i', { class: 'm ' + MK[m.status] }) : null);
-      })), h('span', { class: 'sum', text: `${done} / ${b.hub.length}` })));
-  }));
-  const lg = (bg, t) => h('span', {}, h('i', { class: 'sw', style: bg }), t);
-  v.append(h('section', { class: 'card', style: 'gap:16px' }, h('div', { class: 'ch', style: 'flex-wrap:wrap' }, h('h2', { style: 'font-size:20px;font-weight:700;letter-spacing:-.02em', text: 'Every hub sabaq' }),
-    h('div', { class: 'legend' }, lg('background:var(--s-0)', 'in the hub'), lg('background:var(--s-1)', 'Teacher Copy'), lg('background:var(--s-2)', 'refined'), lg('background:var(--s)', 'class-ready'), lg('box-shadow:inset 0 0 0 2px var(--l)', 'class lesson (L)'))), rows));
-  if (sel) { v.append(detail(sel)); if (S.scroll) { S.scroll = false; const d = $('#detail'); const r = d.getBoundingClientRect(); if (r.top > innerHeight - 120 || r.top < 0) d.scrollIntoView({ block: 'start' }); } }
+  v.append(sec('Last 24 hours', null, ch.length ? h('ol', { class: 'changes' }, ch.slice(0, 8).map(c => h('li', {}, h('span', { class: 'muted', text: c.when.slice(11) }),
+    h('b', { text: c.repo }), h('span', {}, c.ref === 'main' ? null : h('span', { class: 'brtag', text: 'branch' }), c.last)))) : h('p', { class: 'empty', text: 'No commits in the last 24 hours.' })));
+}
+function waiting(all, planned) {
+  const o = [];
+  all.forEach(x => { const m = mentorOf(x.c.id, x.b.n, x.H.h); if (m && m.status === 'revising') o.push({ t: `${code(x)}: mentor wants changes`, d: m.note || 'See the note on the sabaq.', href: `#course?c=${x.c.id}&b=${x.b.n}&s=${sid(x)}` }); });
+  const groups = {};
+  planned.filter(x => stage(x.H.has) !== 'cls').forEach(x => { const k = x.c.id + x.b.n; (groups[k] = groups[k] || []).push(x); });
+  Object.values(groups).forEach(g => {
+    const Ls = g.map(x => x.H.L); const lbl = Ls.length > 1 ? `L${Ls[0]} to L${Ls[Ls.length - 1]}` : `L${Ls[0]}`;
+    o.push({ t: `${g[0].c.code} B${g[0].b.n} ${lbl}: decks not made`, d: `${g.length > 1 ? 'These planned class lessons are' : 'This planned class lesson is'} not class-ready yet. Refine, proof and build the deck${g.length > 1 ? 's' : ''} before class.`, href: `#course?c=${g[0].c.id}&b=${g[0].b.n}&f=class` });
+  });
+  S.data.courses.forEach(c => {
+    const a = atlasOf(c.atlas);
+    c.babs.forEach(b => { if (!b.hub.length) return; const k = tally(b.hub); if (k.plan) o.push({ t: `${c.code} B${b.n}: ${k.plan === b.hub.length ? `${k.plan} sabaq listed, none written` : `${k.plan} of ${b.hub.length} sabaq still to write`}`, d: `Hub ${hubState(b.hub_state)}, built on ${a.name} B${b.from}.`, href: `#course?c=${c.id}&b=${b.n}` }); });
+    const none = c.babs.filter(b => !b.hub.length);
+    if (none.length) o.push({ t: `${c.code} ${none.length > 1 ? `B${none[0].n} to B${none[none.length - 1].n}` : 'B' + none[0].n}: hub not drafted`, d: none.map(b => `B${b.n}: ${b.hub_state}`).join('. ') + '.', href: `#course?c=${c.id}&b=${none[0].n}` });
+  });
+  S.data.atlases.forEach(a => a.babs.forEach(b => { if (b.branch && (b.branch.counts.refined || 0) > 20) o.push({ t: `${a.name} B${b.n}: ${b.branch.counts.refined} Fasl lessons waiting for review`, d: 'Arabic checks and a decisions list, on a branch.', href: `#atlas?a=${a.id}&b=${b.n}` }); }));
+  return o;
 }
 
-// ---------- shared for atlas and course pages ----------
-function usersOf(atlasId, babN) { const o = []; S.data.courses.forEach(c => c.babs.forEach(b => { if (c.atlas === atlasId && b.from === babN) o.push({ c, b }); })); return o; }
-function faslState(f) { return f.br ? 'br' : (f.al || []).includes('built') ? 'b' : (f.al || []).includes('written') ? 'w' : (f.al || []).length ? 'o' : 'n'; }
-const FLBL = { b: 'built', w: 'written', br: 'branch', o: 'not started', n: 'not M1' };
-function faslBar(fasls) {
-  const st = fasls.map(faslState).filter(x => x !== 'n'); const n = st.length; const cnt = k => st.filter(x => x === k).length;
-  return h('span', { class: 'bar', style: n ? '' : 'background:transparent' }, n ? [['b', 'var(--f)'], ['w', 'var(--f-2)'], ['br', 'var(--f-stripe)']].map(([k, c]) => cnt(k) ? h('span', { style: `width:${100 * cnt(k) / n}%;background:${c}` }) : null) : null);
+// ---------- Courses ----------
+function courseTabs(cid) {
+  return h('div', { class: 'ctabs', role: 'group', 'aria-label': 'Course' },
+    S.data.courses.map(c => [c.id, c.ur, c.code]).concat(OTHERS).map(([id, n, k]) =>
+      h('a', { href: '#course?c=' + id, 'aria-current': id === cid ? 'page' : null }, ur(n), h('span', { text: k }))));
 }
-function faslCol(a, bab, hi, title) {
-  const col = h('div', { class: 'col f' }, h('div', { class: 'chd' }, h('span', { class: 'ur', text: 'فصل', lang: 'ur' }), h('span', { class: 'k', text: title || `${a.name} B${bab.n}, F` })));
-  if (bab.fasls.length) bab.fasls.forEach(f => { const s = faslState(f);
-    col.append(h('div', { class: 'fr' + (hi && hi.has(f.id) ? ' hi' : '') }, h('span', { class: 'c', text: 'F' + f.id.split('.')[1] }), ur(f.ur), h('span', { class: 'fs ' + s, text: FLBL[s] }))); });
-  else col.append(h('p', { class: 'empty', text: a.state === 'done' ? 'No Fasls listed.' : 'Fasls are still being found by the atlas run.' }));
-  return col;
-}
-
-// ---------- Atlases: atlas, Bab, Fasl, and which course Babs use them ----------
-function renderAtlas(p) {
-  const v = $('#view'); v.replaceChildren();
-  const a = atlasOf(p.get('a') || 'mahdaviyat') || atlasOf('mahdaviyat');
-  const bab = a.babs.find(b => b.n === +p.get('b')) || a.babs.find(b => usersOf(a.id, b.n).length) || a.babs[0];
-  v.append(h('header', { class: 'head' }, h('div', { style: 'display:flex;flex-direction:column;gap:4px' }, h('span', { class: 'date', text: 'Built from the four scholars. Each atlas can feed more than one course.' }), h('h1', { text: 'Atlases' }))));
-  const order = ['mahdaviyat', 'tauheed', 'akhlaq', 'adl', 'maad', 'nubuwat', 'imamat'];
-  v.append(h('section', { class: 'atl', role: 'group', 'aria-label': 'Atlas' }, order.map(atlasOf).filter(Boolean).map(at => {
-    const cs = S.data.courses.filter(c => c.atlas === at.id);
-    return h('button', { type: 'button', class: 'acard', 'aria-pressed': at.id === a.id ? 'true' : 'false', onclick: () => go('atlas', { a: at.id }) },
-      h('span', { class: 'ur', text: at.ur, lang: 'ur' }), h('span', { class: 'mt', text: at.state === 'done' ? `${at.babs.length} Babs, ${at.babs.reduce((n, b) => n + b.fasls.length, 0)} Fasls` : `${at.babs.length} Babs, being built` }),
-      h('span', { class: 'mt', text: cs.length ? 'used by ' + cs.map(c => c.code).join(', ') : 'no course yet' }),
-      h('span', { class: 'dots' }, at.babs.map(b => h('i', { class: usersOf(at.id, b.n).length ? 'k' : '', title: 'B' + b.n }))));
-  })));
-  const list = h('div', { class: 'babs', role: 'group', 'aria-label': `${a.name} Babs` }, a.babs.map(b => {
-    const us = usersOf(a.id, b.n);
-    return h('button', { type: 'button', class: 'bab', 'aria-pressed': b.n === bab.n ? 'true' : 'false', onclick: () => go('atlas', { a: a.id, b: b.n }) },
-      h('span', { class: 'n', text: UD(b.n) }), h('span', { class: 'tt' }, ur(b.ur), faslBar(b.fasls)),
-      h('span', { class: 'hb', style: 'color:var(--s)', text: us.map(u => u.c.code).join(', ') }));
-  }));
-  const fst = bab.fasls.map(faslState); const us = usersOf(a.id, bab.n);
-  const det = h('div', { style: 'display:flex;flex-direction:column;gap:14px;min-width:0' });
-  det.append(h('section', { class: 'card' }, h('div', { class: 'bhead' },
-    h('div', { style: 'display:flex;flex-direction:column' }, ur(`${a.ur}، باب ${UD(bab.n)}`, 's1'), ur(bab.ur, 'big')),
-    h('div', { class: 'stats' }, h('span', { class: 'stat' }, h('b', { text: String(bab.fasls.length || 'not yet') }), h('span', { text: 'Fasls' })),
-      fst.some(x => x !== 'n') ? h('span', { class: 'stat' }, h('b', { text: `${fst.filter(x => x === 'b').length} of ${fst.filter(x => x !== 'n').length}` }), h('span', { text: 'atlas lessons built' })) : null,
-      fst.some(x => x === 'br') ? h('span', { class: 'stat' }, h('b', { text: String(fst.filter(x => x === 'br').length) }), h('span', { text: 'on a branch' })) : null)),
-    bab.note ? h('p', { class: 'note', text: bab.note }) : null));
-  det.append(h('section', { class: 'card' }, h('span', { class: 'kick', text: 'Used by' }),
-    us.length ? h('div', { style: 'display:flex;gap:10px;flex-wrap:wrap' }, us.map(u => h('a', { href: `#course?c=${u.c.id}&b=${u.b.n}`, class: 'usechip' },
-      ur(`${u.c.ur}، باب ${UD(u.b.n)}`), h('span', { text: `${u.c.code} B${u.b.n}: ${u.b.hub.length ? u.b.hub.length + ' sabaq' : u.b.hub_state}${u.b.hub.some(H => H.L) ? ', ' + u.b.hub.filter(H => H.L).length + ' class lessons' : ''}` }))))
-      : h('p', { class: 'empty', text: 'No course uses this Bab yet.' })));
-  det.append(faslCol(a, bab));
-  v.append(h('section', { class: 'mgrid' }, list, det));
-}
-
-// ---------- Courses: each course on its own, Bab by Bab ----------
 function renderCourse(p) {
   const v = $('#view'); v.replaceChildren();
   const cid = p.get('c') || 'zm';
+  v.append(courseTabs(cid));
   if (cid === 'mrf' || cid === 'taz') { renderOther(cid); return; }
   const c = courseOf(cid) || S.data.courses[0]; const a = atlasOf(c.atlas);
   const b = c.babs.find(x => x.n === +p.get('b')) || c.babs.find(x => x.hub.length) || c.babs[0];
-  const sel = findS(p.get('s'));
   const ab = a.babs.find(x => x.n === b.from);
-  v.append(h('header', { class: 'head' }, h('div', { style: 'display:flex;flex-direction:column;gap:4px' }, h('span', { class: 'date', text: `${c.code}, built from the ${a.name} atlas` }), h('h1', {}, ur(c.ur, 'big', 'span')))));
-  const list = h('div', { class: 'babs', role: 'group', 'aria-label': `${c.code} Babs` }, c.babs.map(x => {
-    const n = x.hub.length, done = x.hub.filter(H => ['ref', 'cls'].includes(stage(H.has))).length, tc = x.hub.filter(H => stage(H.has) !== 'plan').length;
-    const xab = a.babs.find(y => y.n === x.from);
-    return h('button', { type: 'button', class: 'bab', 'aria-pressed': x.n === b.n ? 'true' : 'false', onclick: () => go('course', { c: c.id, b: x.n }) },
-      h('span', { class: 'n', text: UD(x.n) }), h('span', { class: 'tt' }, ur(xab ? xab.ur : ''),
-        h('span', { class: 'bar' }, n ? [h('span', { style: `width:${100 * done / n}%;background:var(--s)` }), h('span', { style: `width:${100 * (tc - done) / n}%;background:var(--s-1)` })] : null)),
-      h('span', { class: 'hb', style: 'color:var(--f)', text: `${a.name} B${x.from}` }));
-  }));
-  const hi = new Set(sel && sel.c.id === c.id && sel.b.n === b.n ? (sel.H.fasls || []).map(u => u.replace('U', '')) : []);
-  const det = h('div', { style: 'display:flex;flex-direction:column;gap:14px;min-width:0' });
-  det.append(h('section', { class: 'card' }, h('div', { class: 'bhead' },
-    h('div', { style: 'display:flex;flex-direction:column' }, ur(`${c.ur}، باب ${UD(b.n)}`, 's1'), ur(ab ? ab.ur : '', 'big'),
-      h('a', { href: `#atlas?a=${a.id}&b=${b.from}`, class: 'small', style: 'color:var(--f);font-weight:600', text: `From ${a.name} B${b.from}` })),
-    h('div', { class: 'stats' },
-      h('span', { class: 'stat' }, h('b', { text: String(b.hub.length) }), h('span', { text: 'hub sabaq' })),
-      b.hub.length ? h('span', { class: 'stat' }, h('b', { text: String(b.hub.filter(H => stage(H.has) !== 'plan').length) }), h('span', { text: 'Teacher Copy written' })) : null,
-      b.hub.some(H => H.L) ? h('span', { class: 'stat' }, h('b', { text: `${b.hub.filter(H => H.L && H.Ls !== 'planned').length} + ${b.hub.filter(H => H.L && H.Ls === 'planned').length}` }), h('span', { text: 'L taught + planned' })) : null)),
-    h('span', { class: 'small muted', text: `Hub: ${b.hub_state}` })));
-  const scol = h('div', { class: 'col s' }, h('div', { class: 'chd' }, h('span', { class: 'ur', text: 'سبق', lang: 'ur' }), h('span', { class: 'k', text: `Hub, ${c.code} B${b.n}, S` })));
-  const W = { plan: 4, tc: 33, ref: 66, cls: 100 }, C = { plan: 'var(--s-0)', tc: 'var(--s-1)', ref: 'var(--s-2)', cls: 'var(--s)' };
-  if (b.hub.length) b.hub.forEach(H => { const x = { c, b, H }; const st = stage(H.has); const m = mentorOf(c.id, b.n, H.h);
-    scol.append(h('button', { type: 'button', class: 'sc' + (H.L ? ' L' : ''), 'aria-pressed': sel && sid(sel) === sid(x) ? 'true' : 'false', onclick: () => { S.scroll = true; go('course', { c: c.id, b: b.n, s: sid(x) }); } },
-      h('span', { class: 'r1' }, ur('سبق ' + UD(H.h)), h('span', { class: 'from', text: (H.fasls || []).map(u => 'F' + u.split('.')[1]).join(', ') })),
-      ur(H.ur, 't'), h('span', { class: 'pb' }, h('i', { style: `width:${W[st]}%;background:${C[st]}` })),
-      m ? h('span', { class: 'tag ' + MK[m.status], style: 'align-self:flex-start', text: mText(m) }) : null)); });
-  else scol.append(h('p', { class: 'empty', text: `No sabaq listed yet. Hub: ${b.hub_state}.` }));
-  const lcol = h('div', { class: 'col l' }, h('div', { class: 'chd' }, h('span', { class: 'ur', text: 'درس', lang: 'ur' }), h('span', { class: 'k', text: `Class, ${c.code} B${b.n}, L` })));
-  const ls = b.hub.filter(H => H.L).sort((p1, p2) => p1.L - p2.L); const nextL = ls.find(H => H.Ls === 'planned');
-  if (ls.length) ls.forEach(H => lcol.append(h('div', { class: 'lc' + (H.Ls === 'planned' ? (H === nextL ? ' next' : ' planned') : '') },
-    h('span', { class: 'r1' }, h('span', { text: H.Ls === 'planned' ? (H === nextL ? 'next' : 'planned') : 'taught' }), h('b', {}, 'L' + H.L + ' ', h('small', { text: 'from S' + H.h }))), ur(H.ur))));
-  else lcol.append(h('p', { class: 'empty', text: 'No class lesson picked from this Bab yet.' }));
-  det.append(h('div', { class: 'cols' }, ab ? faslCol(a, ab, hi, `From ${a.name} B${b.from}, F`) : h('div'), scol, lcol));
-  if (sel && sel.c.id === c.id && sel.b.n === b.n) det.append(detail(sel));
-  v.append(h('section', { class: 'mgrid' }, list, det));
-  if (S.scroll && $('#detail')) { S.scroll = false; const d = $('#detail'); if (d.getBoundingClientRect().top > innerHeight - 120) d.scrollIntoView({ block: 'center' }); }
+  const sel = findS(p.get('s')); const filt = p.get('f') || 'all';
+  const allH = c.babs.flatMap(x => x.hub); const k = tally(allH); const L = lessonTotals(c);
+  v.append(h('header', { class: 'head row' },
+    h('div', {}, h('h1', {}, ur(c.ur, 'big', 'span')), h('p', { class: 'lede' }, `${courseSub(c)}. `, h('a', { href: '#atlas?a=' + a.id, text: 'Open the atlas' }))),
+    h('div', { class: 'totals' }, [[allH.length, 'sabaq listed'], [allH.length - k.plan, 'Teacher Copy written'], [k.cls, 'class-ready'], [`${L.taught} + ${L.planned}`, 'taught + planned']]
+      .map(([n, t]) => h('span', {}, h('b', { text: String(n) }), h('span', { text: t }))))));
+
+  v.append(sec('Babs', stageLegend(), h('div', { class: 'panel list' }, c.babs.map(x => {
+    const xab = a.babs.find(y => y.n === x.from); const xk = tally(x.hub); const Ls = x.hub.filter(H => H.L).map(H => H.L).sort((m, n) => m - n);
+    return h('a', { class: 'babrow', href: `#course?c=${c.id}&b=${x.n}`, 'aria-current': x.n === b.n ? 'true' : null },
+      h('span', { class: 'bn', text: 'B' + x.n }),
+      h('span', { class: 'bt' }, ur(xab ? xab.ur : ''), h('span', { class: 'meta', text: `from ${a.name} B${x.from} · hub ${hubState(x.hub_state)}` })),
+      h('span', { class: 'bp' }, stageBar(xk), h('span', { class: 'cnt', text: stageText(xk) })),
+      h('span', { class: 'bl', text: Ls.length ? (Ls.length > 1 ? `L${Ls[0]} to L${Ls[Ls.length - 1]}` : 'L' + Ls[0]) : '' }));
+  }))));
+
+  const F = [['all', 'All', () => true], ['class', 'In class', H => H.L], ['ready', 'Class-ready', H => stage(H.has) === 'cls'], ['refine', 'Needs refining', H => stage(H.has) === 'tc'], ['write', 'Not written', H => stage(H.has) === 'plan']]
+    .map(([id, t, fn]) => ({ id, t, fn, n: b.hub.filter(fn).length })).filter(f => f.id === 'all' || f.n);
+  const cur = F.find(f => f.id === filt) || F[0];
+  const title = h('h2', { class: 'bh' }, h('span', { text: `B${b.n} hub sabaq` }), ur(ab ? ab.ur : ''));
+  const seg = F.length > 1 ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Show' }, F.map(f => h('a', { href: `#course?c=${c.id}&b=${b.n}` + (f.id === 'all' ? '' : '&f=' + f.id), 'aria-current': f === cur ? 'true' : null, text: `${f.t} ${f.n}` }))) : null;
+  const rows = b.hub.filter(cur.fn);
+  const body = h('div', { class: 'panel flush' });
+  if (!b.hub.length) body.append(h('p', { class: 'empty pad', text: `No sabaq listed yet. Hub: ${hubState(b.hub_state)}.` }));
+  else {
+    body.append(h('div', { class: 'srow shd' }, h('span', { text: 'Sabaq' }), h('span', { class: 'r', text: 'Title, and the atlas Fasls it uses' }), h('span', { text: 'Written · Refined · Deck' }), h('span', { text: 'Class' })));
+    rows.forEach(H => {
+      const x = { c, b, H }; const st = stage(H.has); const lvl = { plan: 0, tc: 1, ref: 2, cls: 3 }[st]; const m = mentorOf(c.id, b.n, H.h);
+      const open = sel && sid(sel) === sid(x);
+      body.append(h('a', { class: 'srow', href: `#course?c=${c.id}&b=${b.n}` + (cur.id === 'all' ? '' : '&f=' + cur.id) + (open ? '' : '&s=' + sid(x)), 'aria-expanded': open ? 'true' : 'false', onclick: () => { S.scroll = !open; } },
+        h('span', { class: 'sn', text: 'S' + H.h }),
+        h('span', { class: 'stt' }, ur(H.ur), h('span', { class: 'meta', text: (H.fasls || []).length ? `${a.name} B${b.from} ` + H.fasls.map(u => 'F' + u.split('.')[1]).join(', ') : `${a.name} B${b.from}` })),
+        h('span', { class: 'steps3', title: STAGE_NAME[st] }, [1, 2, 3].map(i => h('i', { class: i <= lvl ? 'on' + i : '' }))),
+        h('span', { class: 'sc' }, H.L ? h('span', { class: 'ltag' + (sel && sel.H === H ? '' : '') + (H.Ls === 'planned' && H === nextOf(b) ? ' next' : ''), text: `L${H.L} ${H.Ls === 'planned' ? (H === nextOf(b) ? 'next' : 'planned') : 'taught'}` }) : null,
+          m ? h('span', { class: 'tag ' + MK[m.status], text: mText(m) }) : null)));
+      if (open) body.append(detail(x));
+    });
+    if (!rows.length) body.append(h('p', { class: 'empty pad', text: 'No sabaq in this group.' }));
+  }
+  v.append(sec(title, seg, body, ab ? h('p', { class: 'muted small', style: 'margin-top:10px' }, `The ${ab.fasls.length} Fasls of ${a.name} B${b.from}, and which sabaq uses each, are on the `, h('a', { href: `#atlas?a=${a.id}&b=${b.from}`, text: 'atlas page' }), '.') : null));
+  if (S.scroll && $('#detail')) { S.scroll = false; const d = $('#detail'); const r = d.getBoundingClientRect(); if (r.bottom > innerHeight || r.top < 0) d.scrollIntoView({ block: 'nearest' }); }
 }
+const nextOf = b => b.hub.filter(H => H.L && H.Ls === 'planned').sort((m, n) => m.L - n.L)[0];
+
+// the open sabaq: what it has, what is still to make, the chain, mentor buttons
+function detail(x) {
+  const a = atlasOf(x.c.atlas); const m = mentorOf(x.c.id, x.b.n, x.H.h); const has = new Set(x.H.has);
+  const missing = READY.filter(([k]) => !hasAny(has, k)).map(([, n]) => n);
+  const chain = h('div', { class: 'chain' });
+  (x.H.fasls || []).forEach(u => { const f = fasl(a, u); chain.append(h('div', { class: 'cf' }, h('span', { class: 'k', text: fcode(a, u) }), ur(f ? f.ur : ''))); });
+  const note = h('input', { id: 'mnote', type: 'text', placeholder: 'What the mentor asked for', value: m && m.note ? m.note : '' });
+  const set = st => { const prev = mentorOf(x.c.id, x.b.n, x.H.h); const round = st === 'revising' ? ((prev && prev.round) || 0) + 1 : (prev && prev.round) || 0;
+    saveMentor(x, st ? { status: st, round, note: note.value.trim(), updated: new Date().toISOString().slice(0, 16) } : null); };
+  const btn = (cls, st, label) => h('button', { type: 'button', class: 'btn ' + cls, 'aria-pressed': m && m.status === st ? 'true' : 'false', onclick: () => set(st), text: label });
+  return h('div', { class: 'detail', id: 'detail', 'aria-label': `${code(x)} details` },
+    h('div', { class: 'dcol' },
+      h('span', { class: 'dk', text: 'Has' }), chipsOf(x.H.has),
+      h('span', { class: 'dk', text: missing.length ? 'Still to make for class' : 'Class-ready' }),
+      missing.length ? h('div', { class: 'chips' }, missing.map(n => h('span', { class: 'dchip miss', text: n }))) : h('span', { class: 'small muted', text: 'Everything for class is made.' }),
+      (x.H.fasls || []).length ? [h('span', { class: 'dk', text: 'Built from' }), chain] : null),
+    h('div', { class: 'dcol' },
+      h('span', { class: 'dk', text: 'Mentor' }),
+      h('div', { class: 'mbtns' }, btn('with', 'with mentor', 'Sent to mentor'), btn('rev', 'revising', 'Wants changes'), btn('fin', 'final', 'Final'),
+        m ? h('button', { type: 'button', class: 'linkbtn', onclick: () => set(null), text: 'Clear' }) : null),
+      h('label', { for: 'mnote', class: 'small muted', text: "Mentor's note, saved with the next button you press" }), note,
+      h('span', { class: 'small muted', text: m ? `${mText(m)}, set ${m.updated} UTC` : 'No mentor round yet.' })));
+}
+
+// ---------- Atlases ----------
+function faslState(f) { return f.br ? 'br' : (f.al || []).includes('built') ? 'b' : (f.al || []).includes('written') ? 'w' : (f.al || []).length ? 'o' : 'n'; }
+const F_WORD = { b: 'built', w: 'written', br: 'only on a branch', o: 'planned, not built', n: 'not in the atlas lesson plan' };
+function usersOf(atlasId, babN) { const o = []; S.data.courses.forEach(c => c.babs.forEach(b => { if (c.atlas === atlasId && b.from === babN) o.push({ c, b }); })); return o; }
+function renderAtlas(p) {
+  const v = $('#view'); v.replaceChildren();
+  const order = ['mahdaviyat', 'tauheed', 'akhlaq', 'adl', 'maad', 'nubuwat', 'imamat'];
+  const list = order.map(atlasOf).filter(Boolean).concat(S.data.atlases.filter(x => !order.includes(x.id)));
+  const a = atlasOf(p.get('a') || 'mahdaviyat') || list[0];
+  v.append(h('header', { class: 'head' }, h('h1', { text: 'Atlases' }), h('p', { class: 'lede', text: `${list.length} atlases drawn from the four scholars. Each one is split into Babs and Fasls, and any atlas can feed more than one course.` })));
+  const tb = h('tbody');
+  list.forEach(at => {
+    const F = at.babs.flatMap(b => b.fasls); const built = F.filter(f => faslState(f) === 'b').length; const cs = S.data.courses.filter(c => c.atlas === at.id);
+    tb.append(h('tr', { 'aria-current': at.id === a.id ? 'true' : null },
+      h('td', {}, h('a', { class: 'aname', href: '#atlas?a=' + at.id }, ur(at.ur, 'big'), h('span', { text: at.name }))),
+      h('td', { text: String(at.babs.length) }),
+      h('td', { text: F.length ? F.length.toLocaleString('en') : 'being built' }),
+      h('td', {}, h('span', { class: 'abar' }, h('span', { class: 'fbar' }, h('span', { style: `width:${F.length ? Math.max(100 * built / F.length, built ? 1 : 0) : 0}%` })), h('span', { class: 'cnt', text: F.length ? `${built} of ${F.length}` : 'not yet' }))),
+      h('td', {}, cs.length ? cs.map(c => h('a', { class: 'use', href: '#course?c=' + c.id, text: `${c.code}, ${c.babs.length} Bab${c.babs.length === 1 ? '' : 's'}` })) : h('span', { class: 'muted small', text: 'No course yet' }))));
+  });
+  v.append(h('div', { class: 'panel flush' }, h('div', { class: 'scroll' }, h('table', { class: 'atable' }, h('thead', {}, h('tr', {}, ['Atlas', 'Babs', 'Fasls', 'Atlas lessons built', 'Used by'].map(t => h('th', { scope: 'col', text: t })))), tb))));
+
+  if (!a.babs.length) return;
+  const bab = a.babs.find(b => b.n === +p.get('b')) || a.babs.find(b => usersOf(a.id, b.n).length) || a.babs[0];
+  const fl = legend([['f-b', 'Built'], ['f-w', 'Written'], ['f-br', 'Only on a branch'], ['f-n', 'Not yet']]);
+  v.append(sec(h('h2', { class: 'bh' }, ur(a.ur, 'big'), h('span', { text: 'Babs' })), fl, h('div', { class: 'panel list cols2' }, a.babs.map(b => {
+    const st = b.fasls.map(faslState); const n = b.fasls.length; const us = usersOf(a.id, b.n); const c = s => st.filter(x => x === s).length;
+    return h('a', { class: 'abab', href: `#atlas?a=${a.id}&b=${b.n}`, 'aria-current': b.n === bab.n ? 'true' : null },
+      h('span', { class: 'bn', text: 'B' + b.n }),
+      h('span', { class: 'bt' }, ur(b.ur), h('span', { class: 'fbar thin' }, n ? [['b', 'f-b'], ['w', 'f-w'], ['br', 'f-br']].map(([s, cl]) => c(s) ? h('span', { class: cl, style: `width:${100 * c(s) / n}%` }) : null) : null)),
+      h('span', { class: 'fc', text: n ? n + ' F' : '' }),
+      h('span', { class: 'us' }, us.map(u => h('span', { class: 'use', text: `${u.c.code} B${u.b.n}` }))));
+  }))));
+
+  const users = usersOf(a.id, bab.n); const use = {};
+  users.forEach(u => u.b.hub.forEach(H => (H.fasls || []).forEach(f => { const k = f.replace('U', ''); (use[k] = use[k] || []).push((users.length > 1 ? u.c.code + ' ' : '') + 'S' + H.h); })));
+  const st = bab.fasls.map(faslState);
+  const right = h('span', { class: 'muted small' }, `${bab.fasls.length} Fasls · ${st.filter(x => x === 'b').length} atlas lessons built` + (users.length ? ' · used by ' : ''),
+    users.map((u, i) => [i ? ', ' : '', h('a', { href: `#course?c=${u.c.id}&b=${u.b.n}`, text: `${u.c.code} B${u.b.n}` }), `, ${u.b.hub.length} hub sabaq`]));
+  v.append(sec(h('h2', { class: 'bh' }, h('span', { text: `B${bab.n} Fasls` }), ur(bab.ur)), right,
+    bab.note ? h('p', { class: 'note', text: bab.note }) : null,
+    bab.fasls.length ? h('div', { class: 'panel list cols2' }, bab.fasls.map((f, i) => h('div', { class: 'frow' },
+      h('span', { class: 'fn', text: 'F' + f.id.split('.')[1] }), h('i', { class: 'dot f-' + st[i], title: F_WORD[st[i]] }), ur(f.ur), h('span', { class: 'fs', text: (use[f.id] || []).join(', ') }))))
+      : h('div', { class: 'panel' }, h('p', { class: 'empty', text: a.state === 'done' ? 'No Fasls listed.' : 'Fasls are still being found by the atlas run.' }))));
+  v.append(h('footer', { class: 'scholars' }, h('h2', { text: 'The four scholars' }), h('div', {},
+    [['میرزا مہدی اصفہانی', '17 Arabic books'], ['آقائے حلبی', '212 lectures, 1 book'], ['آیت اللہ سید جعفر سیدان', '2,532 lectures, 14 books'], ['سید حسن افتخارزادہ', '3,122 lectures, 13 books']]
+      .map(([n, s]) => h('span', {}, ur(n), h('span', { class: 'muted small', text: s }))))));
+}
+
+// ---------- Muqaddima and Tazzakur ----------
 function renderOther(cid) {
   const v = $('#view');
   if (cid === 'mrf') { const m = S.data.muqaddima;
-    v.append(h('header', { class: 'head' }, h('div', { style: 'display:flex;flex-direction:column;gap:4px' }, h('span', { class: 'date', text: 'Muqaddima, written from its own source book, Maarif Zamina, not from an atlas' }), h('h1', {}, ur(m.ur, 'big', 'span')))));
-    v.append(h('section', { class: 'card' }, h('div', { class: 'scroll' }, h('table', { class: 't' }, h('tr', {}, h('th', { text: 'Lesson' }), h('th', { text: 'Title' }), h('th', { text: 'What it has' })),
-      m.lessons.map(l => h('tr', {}, h('td', { class: 'code', text: l.code }), h('td', { class: 'ur', lang: 'ur', dir: 'rtl', text: l.ur }), h('td', {}, chipsOf(l.has)))))))); return; }
+    v.append(h('header', { class: 'head' }, h('h1', {}, ur(m.ur, 'big', 'span')), h('p', { class: 'lede', text: `Muqaddima: ${m.lessons.length} lessons, written from its own source book, Maarif Zamina, not from an atlas.` })));
+    v.append(sec('Lessons', legend([['dl write', 'Writing'], ['dl ref', 'Refining'], ['dl deck', 'Decks'], ['dl sup', 'Supplements'], ['dl media', 'Audio and reader']]),
+      h('div', { class: 'panel flush' }, h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, h('th', { text: 'Lesson' }), h('th', { text: 'Title' }), h('th', { text: 'What it has' }))),
+        h('tbody', {}, m.lessons.map(l => h('tr', {}, h('td', { class: 'code', text: l.code }), h('td', {}, ur(l.ur)), h('td', {}, chipsOf(l.has)))))))))); return; }
   const z = S.data.tazzakur;
-  v.append(h('header', { class: 'head' }, h('div', { style: 'display:flex;flex-direction:column;gap:4px' }, h('span', { class: 'date', text: 'One session a week, each from one hadith, topic or occasion' }), h('h1', { text: 'Tazzakur, class LMM-01' }))));
-  v.append(h('section', { class: 'card' }, h('div', { class: 'scroll' }, h('table', { class: 't' }, h('tr', {}, h('th', { text: 'Session' }), h('th', { text: 'Date' }), h('th', { text: 'Starts from' }), h('th', { text: 'Anchor' }), h('th', { text: 'State' })),
-    z.sessions.map(s => h('tr', {}, h('td', { class: 'code', text: s.code }), h('td', { text: s.date }), h('td', { text: s.kind }), h('td', { class: 'ur', lang: 'ur', dir: 'rtl', text: s.ur }), h('td', { text: s.state })))))));
+  v.append(h('header', { class: 'head' }, h('h1', { text: 'Tazzakur, class LMM-01' }), h('p', { class: 'lede', text: 'One session a week, each from one hadith, topic or occasion.' })));
+  v.append(sec('Sessions', null, h('div', { class: 'panel flush' }, h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, ['Session', 'Date', 'Starts from', 'Anchor', 'State'].map(t => h('th', { text: t })))),
+    h('tbody', {}, z.sessions.map(s => h('tr', {}, h('td', { class: 'code', text: s.code }), h('td', { text: fmtDay(s.date) }), h('td', { text: s.kind }), h('td', {}, ur(s.ur)), h('td', { text: s.state })))))))));
 }
 
 // ---------- mentor marks ----------
