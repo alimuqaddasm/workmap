@@ -1,10 +1,12 @@
-/* Maarif Work Map (v5 design). Reads workmap.json and board.json from the private hub repo with the viewer's own
-   GitHub key (kept in this browser only). The mentor buttons write the `workmap` section of board.json.
+/* Maarif Work Map (v5 design). Reads workmap.json from the private repo hub-data and the mentor marks from hub-notes,
+   with the viewer's own GitHub key (kept in this browser only; it covers hub-data and hub-notes, never the hub).
+   The mentor buttons write hub-notes/marks.json.
    Place in the page lives in the address: #week?c=zm&s=zm-1-8, #course?c=zm&b=1&s=zm-1-8, #atlas?a=mahdaviyat&b=15. */
 (function () {
 'use strict';
 const OWNER = 'alimuqaddasm', HUB = 'hub', KEY = 'workmap.key';
-const API = `https://api.github.com/repos/${OWNER}/${HUB}/contents/`;
+const API = repo => `https://api.github.com/repos/${OWNER}/${repo}/contents/`;
+const DATA = 'hub-data', NOTES = 'hub-notes';
 const $ = s => document.querySelector(s);
 function h(tag, attrs, ...kids) {
   const e = document.createElement(tag);
@@ -38,14 +40,15 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = fal
 // ---------- GitHub ----------
 const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g, '')), c => c.charCodeAt(0)));
 const b64enc = s => { const b = new TextEncoder().encode(s); let o = ''; for (let i = 0; i < b.length; i += 0x8000) o += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(o); };
-async function gh(path, opts) {
+async function gh(path, opts, repo, raw) {
   let r;
-  try { r = await fetch(API + path, Object.assign({ headers: { Authorization: 'Bearer ' + getKey(), Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } }, opts || {})); }
+  try { r = await fetch(API(repo || NOTES) + path, Object.assign({ headers: { Authorization: 'Bearer ' + getKey(), Accept: raw ? 'application/vnd.github.raw+json' : 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, cache: 'no-cache' }, opts || {})); }
   catch (e) { const er = new Error('GitHub could not be reached. Check your connection.'); er.status = 0; throw er; }
-  if (!r.ok) { const e = new Error(r.status === 401 ? 'GitHub refused the key. It may have expired or been revoked.' : r.status === 404 ? `This key cannot see ${path} in the hub repo.` : `GitHub answered ${r.status}.`); e.status = r.status; throw e; }
-  return r.json();
+  if (!r.ok) { const e = new Error(r.status === 401 ? 'GitHub refused the key. It may have expired or been revoked.' : r.status === 404 ? `This key cannot see ${path}. It needs the hub-data and hub-notes repos.` : `GitHub answered ${r.status}.`); e.status = r.status; throw e; }
+  return raw ? r.text() : r.json();
 }
-async function readJson(path) { const j = await gh(path); return { sha: j.sha, data: JSON.parse(b64dec(j.content)) }; }
+async function readJson(path) { const j = await gh(path, null, NOTES); return { sha: j.sha, data: JSON.parse(b64dec(j.content)) }; }
+async function readData(path) { return JSON.parse(await gh(path, null, DATA, true)); }
 
 // ---------- data helpers ----------
 const S = { data: null, board: null, boardSha: null, reading: null };
@@ -84,12 +87,12 @@ window.addEventListener('hashchange', route);
 async function load() {
   screen('loading');
   try {
-    const [w, b] = await Promise.all([readJson('workmap.json'), readJson('board.json')]);
-    S.data = w.data; S.board = b.data; S.boardSha = b.sha; if (!S.board.workmap) S.board.workmap = {};
-    try { S.reading = (await readJson('reading/index.json')).data; } catch (e) { S.reading = null; }
+    const [w, b] = await Promise.all([readData('workmap.json'), readJson('marks.json')]);
+    S.data = w; S.board = { workmap: b.data || {} }; S.boardSha = b.sha;
+    try { S.reading = await readData('reading/index.json'); } catch (e) { S.reading = null; }
     route();
   } catch (e) {
-    if (e.status === 401) { setKey(''); connect(e.message); return; }
+    if (e.status === 401 || e.status === 404) { setKey(''); connect(e.status === 404 ? 'This key cannot open hub-data and hub-notes. Make a key for those two repos (steps above) and paste it here.' : e.message); return; }
     $('#failmsg').textContent = e.message || String(e); screen('fail');
   }
 }
@@ -362,12 +365,12 @@ async function saveMentor(x, entry) {
   const cid = x.c.id, key = unitKey(x.b.n, x.H.h);
   document.querySelectorAll('#detail .btn').forEach(b => { b.disabled = true; });
   const apply = board => { board.workmap = board.workmap || {}; board.workmap[cid] = board.workmap[cid] || {}; if (entry) board.workmap[cid][key] = entry; else delete board.workmap[cid][key]; return board; };
-  const put = (board, sha) => gh('board.json', { method: 'PUT', headers: { Authorization: 'Bearer ' + getKey(), Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: `Work Map: ${cid} ${key} ${entry ? entry.status : 'cleared'}`, content: b64enc(JSON.stringify(board, null, 1) + '\n'), sha, branch: 'main' }) });
+  const put = (board, sha) => gh('marks.json', { method: 'PUT', headers: { Authorization: 'Bearer ' + getKey(), Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: `Work Map: ${cid} ${key} ${entry ? entry.status : 'cleared'}`, content: b64enc(JSON.stringify(board.workmap, null, 1) + '\n'), sha, branch: 'main' }) });
   try {
     let res;
     try { res = await put(apply(JSON.parse(JSON.stringify(S.board))), S.boardSha); }
-    catch (e) { if (e.status !== 409 && e.status !== 422) throw e; const fresh = await readJson('board.json'); S.board = fresh.data; S.boardSha = fresh.sha; res = await put(apply(JSON.parse(JSON.stringify(S.board))), S.boardSha); }
+    catch (e) { if (e.status !== 409 && e.status !== 422) throw e; const fresh = await readJson('marks.json'); S.board = { workmap: fresh.data || {} }; S.boardSha = fresh.sha; res = await put(apply(JSON.parse(JSON.stringify(S.board))), S.boardSha); }
     apply(S.board); S.boardSha = res.content.sha;
     toast(entry ? `Saved. ${code(x)} is ${mText(entry)}.` : `Cleared the mark on ${code(x)}.`);
     route();

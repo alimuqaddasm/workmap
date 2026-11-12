@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://api.github.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <title>Maarif Work Map</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,10 +14,10 @@
 <body>
 <section id="connect" class="solo" hidden>
   <h1>Connect your GitHub key</h1>
-  <p class="muted">This site holds no course data. It reads your progress from your private hub repo with a key that stays in this browser. Anyone else who opens this address sees only this page.</p>
+  <p class="muted">This site holds no course data. It reads your progress from your private repos hub-data and hub-notes with a key that stays in this browser. The key never needs the hub itself. Anyone else who opens this address sees only this page.</p>
   <ol>
     <li>On GitHub, open Settings, Developer settings, Personal access tokens, Fine-grained tokens, and generate a new token.</li>
-    <li>Repository access: only select repositories, and pick hub.</li>
+    <li>Expiration: 90 days. Repository access: only select repositories, and pick hub-data and hub-notes.</li>
     <li>Repository permissions: Contents, read and write. Nothing else.</li>
     <li>Paste the token here.</li>
   </ol>
@@ -30,7 +31,7 @@
 <section id="fail" class="solo" hidden>
   <h1>The hub could not be read</h1>
   <p id="failmsg" class="err"></p>
-  <p class="muted">Check your connection and that the key still has access to the hub repo, then try again.</p>
+  <p class="muted">Check your connection and that the key still has access to hub-data and hub-notes, then try again.</p>
   <div class="r"><button type="button" class="btn dark" id="retry">Try again</button><button type="button" class="btn" id="rekey">Use another key</button></div>
 </section>
 
