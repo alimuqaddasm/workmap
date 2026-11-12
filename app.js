@@ -52,6 +52,8 @@ const S = { data: null, board: null, boardSha: null, reading: null };
 // Reading Mode (the reading-mode site): full lesson text, read with this same key
 const RM = 'https://alimuqaddasm.github.io/reading-mode/';
 function readSabaq(cid, b, n) { const c = S.reading && S.reading.courses.find(x => x.id === cid); const bb = c && c.babs.find(x => x.n === b); const s = bb && bb.sabaq.find(x => x.n === n); return s ? { url: `${RM}#${cid}/${b}/${n}`, s } : null; }
+function readMrf(code) { const c = S.reading && S.reading.courses.find(x => x.id === 'mrf'); const s = c && c.babs.flatMap(b => b.sabaq).find(x => x.slug === code); return s ? `${RM}#mrf/1/${s.slug}` : null; }
+function readTaz(code) { const c = S.reading && S.reading.courses.find(x => x.id === 'taz'); const p = c && c.papers.find(x => x.path === `sessions/${code}.md`); return p ? `${RM}#taz/papers/${p.i}` : null; }
 function readFasl(aid, b, fid) { const a = S.reading && S.reading.atlases.find(x => x.id === aid); const bb = a && a.babs.find(x => x.n === b); const f = bb && bb.fasls.find(x => x.id === fid); return f && f.parts.length ? `${RM}#${aid}/${b}/${f.parts[0].id}` : null; }
 const DEL = [['tc', 'Teacher Copy', 'write'], ['handout', 'Handout', 'write'], ['refined', 'Refined handout', 'ref'], ['proof', 'Print proof', 'ref'],
   ['main', 'Main deck', 'deck'], ['extra', 'Extra deck', 'deck'], ['qa', 'QA deck', 'deck'], ['tafseer', 'Tafseer', 'sup'], ['flow', 'Flowchart', 'sup'],
@@ -346,11 +348,11 @@ function renderOther(cid) {
     v.append(h('header', { class: 'head' }, h('h1', {}, ur(m.ur, 'big', 'span')), h('p', { class: 'lede', text: `Muqaddima: ${m.lessons.length} lessons, written from its own source book, Maarif Zamina, not from an atlas.` })));
     v.append(sec('Lessons', legend([['dl write', 'Writing'], ['dl ref', 'Refining'], ['dl deck', 'Decks'], ['dl sup', 'Supplements'], ['dl media', 'Audio and reader']]),
       h('div', { class: 'panel flush' }, h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, h('th', { text: 'Lesson' }), h('th', { text: 'Title' }), h('th', { text: 'What it has' }))),
-        h('tbody', {}, m.lessons.map(l => h('tr', {}, h('td', { class: 'code', text: l.code }), h('td', {}, ur(l.ur)), h('td', {}, chipsOf(l.has)))))))))); return; }
+        h('tbody', {}, m.lessons.map(l => h('tr', {}, h('td', { class: 'code' }, readMrf(l.code) ? h('a', { href: readMrf(l.code), target: '_blank', rel: 'noopener', title: 'Read in Reading Mode', text: l.code }) : l.code), h('td', {}, ur(l.ur)), h('td', {}, chipsOf(l.has)))))))))); return; }
   const z = S.data.tazzakur;
   v.append(h('header', { class: 'head' }, h('h1', { text: 'Tazzakur, class LMM-01' }), h('p', { class: 'lede', text: 'One session a week, each from one hadith, topic or occasion.' })));
   v.append(sec('Sessions', null, h('div', { class: 'panel flush' }, h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, ['Session', 'Date', 'Starts from', 'Anchor', 'State'].map(t => h('th', { text: t })))),
-    h('tbody', {}, z.sessions.map(s => h('tr', {}, h('td', { class: 'code', text: s.code }), h('td', { text: fmtDay(s.date) }), h('td', { text: s.kind }), h('td', {}, ur(s.ur)), h('td', { text: s.state })))))))));
+    h('tbody', {}, z.sessions.map(s => h('tr', {}, h('td', { class: 'code' }, readTaz(s.code) ? h('a', { href: readTaz(s.code), target: '_blank', rel: 'noopener', title: 'Read in Reading Mode', text: s.code }) : s.code), h('td', { text: fmtDay(s.date) }), h('td', { text: s.kind }), h('td', {}, ur(s.ur)), h('td', { text: s.state })))))))));
 }
 
 // ---------- mentor marks ----------
