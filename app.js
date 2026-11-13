@@ -55,9 +55,10 @@ const S = { data: null, board: null, boardSha: null, reading: null };
 // Reading Mode (the reading-mode site): full lesson text, read with this same key
 const RM = 'https://alimuqaddasm.github.io/reading-mode/';
 function readSabaq(cid, b, n) { const c = S.reading && S.reading.courses.find(x => x.id === cid); const bb = c && c.babs.find(x => x.n === b); const s = bb && bb.sabaq.find(x => x.n === n); return s ? { url: `${RM}#${cid}/${b}/${n}`, s } : null; }
+function readClass(cid, b, L) { const c = S.reading && S.reading.courses.find(x => x.id === cid); const bb = c && c.babs.find(x => x.n === b); const ls = bb ? (bb.lessons || []).filter(x => x.L === L) : []; const l = ls.find(x => !x.variant && !/-a$/.test(x.slug)) || ls[0]; return l ? `${RM}#${cid}/${b}/${l.slug}` : null; }
 function readMrf(code) { const c = S.reading && S.reading.courses.find(x => x.id === 'mrf'); const s = c && c.babs.flatMap(b => b.sabaq).find(x => x.slug === code); return s ? `${RM}#mrf/1/${s.slug}` : null; }
 function readTaz(code) { const c = S.reading && S.reading.courses.find(x => x.id === 'taz'); const p = c && c.papers.find(x => x.path === `sessions/${code}.md`); return p ? `${RM}#taz/papers/${p.i}` : null; }
-function readFasl(aid, b, fid) { const a = S.reading && S.reading.atlases.find(x => x.id === aid); const bb = a && a.babs.find(x => x.n === b); const f = bb && bb.fasls.find(x => x.id === fid); return f && f.parts.length ? `${RM}#${aid}/${b}/${f.parts[0].id}` : null; }
+function readFasl(aid, b, fid) { const a = S.reading && S.reading.atlases.find(x => x.id === aid); const bb = a && a.babs.find(x => x.n === b); const u = /^U/.test(fid) ? fid : 'U' + fid; const f = bb && bb.fasls.find(x => x.id === u); return f && f.parts.length ? `${RM}#${aid}/${b}/${f.parts[0].id}` : null; }
 const DEL = [['tc', 'Teacher Copy', 'write'], ['handout', 'Handout', 'write'], ['refined', 'Refined handout', 'ref'], ['proof', 'Print proof', 'ref'],
   ['main', 'Main deck', 'deck'], ['extra', 'Extra deck', 'deck'], ['qa', 'QA deck', 'deck'], ['tafseer', 'Tafseer', 'sup'], ['flow', 'Flowchart', 'sup'],
   ['research', 'Extra research', 'sup'], ['audio', 'Audio', 'media'], ['reader', 'Reader', 'media']];
@@ -165,7 +166,7 @@ function renderWeek() {
       h('div', { class: 'ready' }, h('span', { class: 'muted small', text: 'Ready for class when all four are done' }),
         h('div', { class: 'steps' }, READY.map(([k, n]) => { const ok = hasAny(has, k); return h('div', { class: 'step' + (ok ? ' ok' : '') }, h('i'), h('span', { text: (ok ? 'Done: ' : 'To do: ') + n })); }))),
       h('span', { style: 'display:flex;gap:16px;flex-wrap:wrap' }, h('a', { class: 'more', href: `#course?c=${nx.c.id}&b=${nx.b.n}&s=${sid(nx)}`, text: 'Open this sabaq' }),
-        readSabaq(nx.c.id, nx.b.n, nx.H.h) ? h('a', { class: 'more', href: readSabaq(nx.c.id, nx.b.n, nx.H.h).url, target: '_blank', rel: 'noopener', text: 'Read it in Reading Mode' }) : null),
+        readSabaq(nx.c.id, nx.b.n, nx.H.h) ? h('a', { class: 'more', href: readSabaq(nx.c.id, nx.b.n, nx.H.h).url, target: 'rm', text: 'Read it in Reading Mode' }) : null),
       planned.length > 1 ? h('div', { class: 'after' }, h('span', { class: 'muted small', text: 'After that' }),
         planned.slice(1, 4).map(x => h('a', { class: 'arow', href: `#course?c=${x.c.id}&b=${x.b.n}&s=${sid(x)}` }, ur(x.H.ur), h('span', { class: 'lcode', text: `${nextLabel(x)} · from S${x.H.h}` })))) : null));
   } else top.append(h('article', { class: 'panel' }, h('h2', { text: 'Next class' }), h('p', { class: 'empty', text: 'No class lesson is planned. Ask Claude to "teach ZM B1 S12 as L6" and it shows here.' })));
@@ -274,15 +275,16 @@ function detail(x) {
   const a = atlasOf(x.c.atlas); const m = mentorOf(x.c.id, x.b.n, x.H.h); const has = new Set(x.H.has);
   const missing = READY.filter(([k]) => !hasAny(has, k)).map(([, n]) => n);
   const chain = h('div', { class: 'chain' });
-  (x.H.fasls || []).forEach(u => { const f = fasl(a, u); chain.append(h('div', { class: 'cf' }, h('span', { class: 'k', text: fcode(a, u) }), ur(f ? f.ur : ''))); });
+  (x.H.fasls || []).forEach(u => { const f = fasl(a, u); const bn = +u.slice(1).split('.')[0]; const href = readFasl(a.id, bn, u); chain.append(h(href ? 'a' : 'div', { class: 'cf', href, target: href ? 'rm' : null, title: href ? 'Read this atlas lesson in Reading Mode' : null }, h('span', { class: 'k', text: fcode(a, u) }), ur(f ? f.ur : ''))); });
   const note = h('input', { id: 'mnote', type: 'text', placeholder: 'What the mentor asked for', value: m && m.note ? m.note : '' });
   const set = st => { const prev = mentorOf(x.c.id, x.b.n, x.H.h); const round = st === 'revising' ? ((prev && prev.round) || 0) + 1 : (prev && prev.round) || 0;
     saveMentor(x, st ? { status: st, round, note: note.value.trim(), updated: new Date().toISOString().slice(0, 16) } : null); };
   const btn = (cls, st, label) => h('button', { type: 'button', class: 'btn ' + cls, 'aria-pressed': m && m.status === st ? 'true' : 'false', onclick: () => set(st), text: label });
-  const rd = readSabaq(x.c.id, x.b.n, x.H.h);
+  const rd = readSabaq(x.c.id, x.b.n, x.H.h); const rl = x.H.L && readClass(x.c.id, x.b.n, x.H.L);
   return h('div', { class: 'detail', id: 'detail', 'aria-label': `${code(x)} details` },
     h('div', { class: 'dcol' },
-      rd ? h('a', { class: 'readlink', href: rd.url, target: '_blank', rel: 'noopener' }, h('b', { text: 'Read the full sabaq' }), h('span', { text: `Reading Mode · ${rd.s.notes} editor notes · ${rd.s.q} open questions · ${rd.s.tc} teacher-only parts` })) : h('span', { class: 'small muted', text: 'Not in Reading Mode yet.' }),
+      rd ? h('a', { class: 'readlink', href: rd.url, target: 'rm' }, h('b', { text: 'Read the full sabaq' }), h('span', { text: `Reading Mode · ${rd.s.notes} editor notes · ${rd.s.q} open questions · ${rd.s.tc} teacher-only parts` })) : h('span', { class: 'small muted', text: 'Not in Reading Mode yet.' }),
+      rl ? h('a', { class: 'readlink', href: rl, target: 'rm' }, h('b', { text: `Read the class lesson L${x.H.L}` }), h('span', { text: 'Reading Mode · the text written for the class' })) : null,
       h('span', { class: 'dk', text: 'Has' }), chipsOf(x.H.has),
       h('span', { class: 'dk', text: missing.length ? 'Still to make for class' : 'Class-ready' }),
       missing.length ? h('div', { class: 'chips' }, missing.map(n => h('span', { class: 'dchip miss', text: n }))) : h('span', { class: 'small muted', text: 'Everything for class is made.' }),
@@ -330,14 +332,14 @@ function renderAtlas(p) {
   }))));
 
   const users = usersOf(a.id, bab.n); const use = {};
-  users.forEach(u => u.b.hub.forEach(H => (H.fasls || []).forEach(f => { const k = f.replace('U', ''); (use[k] = use[k] || []).push((users.length > 1 ? u.c.code + ' ' : '') + 'S' + H.h); })));
+  users.forEach(u => u.b.hub.forEach(H => (H.fasls || []).forEach(f => { const k = f.replace('U', ''); (use[k] = use[k] || []).push({ t: (users.length > 1 ? u.c.code + ' ' : '') + 'S' + H.h, x: { c: u.c, b: u.b, H } }); })));
   const st = bab.fasls.map(faslState);
   const right = h('span', { class: 'muted small' }, `${bab.fasls.length} Fasls · ${st.filter(x => x === 'b').length} atlas lessons built` + (users.length ? ' · used by ' : ''),
     users.map((u, i) => [i ? ', ' : '', h('a', { href: `#course?c=${u.c.id}&b=${u.b.n}`, text: `${u.c.code} B${u.b.n}` }), `, ${u.b.hub.length} hub sabaq`]));
   v.append(sec(h('h2', { class: 'bh' }, h('span', { text: `B${bab.n} Fasls` }), ur(bab.ur)), right,
     bab.note ? h('p', { class: 'note', text: bab.note }) : null,
     bab.fasls.length ? h('div', { class: 'panel list cols2' }, bab.fasls.map((f, i) => h('div', { class: 'frow' },
-      readFasl(a.id, bab.n, f.id) ? h('a', { class: 'fn', href: readFasl(a.id, bab.n, f.id), target: '_blank', rel: 'noopener', title: 'Read this atlas lesson', text: 'F' + f.id.split('.')[1] }) : h('span', { class: 'fn', text: 'F' + f.id.split('.')[1] }), h('i', { class: 'dot f-' + st[i], title: F_WORD[st[i]] }), ur(f.ur), h('span', { class: 'fs', text: (use[f.id] || []).join(', ') }))))
+      readFasl(a.id, bab.n, f.id) ? h('a', { class: 'fn', href: readFasl(a.id, bab.n, f.id), target: 'rm', title: 'Read this atlas lesson', text: 'F' + f.id.split('.')[1] }) : h('span', { class: 'fn', text: 'F' + f.id.split('.')[1] }), h('i', { class: 'dot f-' + st[i], title: F_WORD[st[i]] }), readFasl(a.id, bab.n, f.id) ? h('a', { class: 'ft', href: readFasl(a.id, bab.n, f.id), target: 'rm', title: 'Read this atlas lesson in Reading Mode' }, ur(f.ur)) : ur(f.ur), h('span', { class: 'fs' }, (use[f.id] || []).map((o, k) => [k ? ', ' : '', h('a', { href: `#course?c=${o.x.c.id}&b=${o.x.b.n}&s=${sid(o.x)}`, title: 'Open this sabaq', text: o.t })])))))
       : h('div', { class: 'panel' }, h('p', { class: 'empty', text: a.state === 'done' ? 'No Fasls listed.' : 'Fasls are still being found by the atlas run.' }))));
   v.append(h('footer', { class: 'scholars' }, h('h2', { text: 'The four scholars' }), h('div', {},
     [['میرزا مہدی اصفہانی', '17 Arabic books'], ['آقائے حلبی', '212 lectures, 1 book'], ['آیت اللہ سید جعفر سیدان', '2,532 lectures, 14 books'], ['سید حسن افتخارزادہ', '3,122 lectures, 13 books']]
@@ -351,11 +353,11 @@ function renderOther(cid) {
     v.append(h('header', { class: 'head' }, h('h1', {}, ur(m.ur, 'big', 'span')), h('p', { class: 'lede', text: `Muqaddima: ${m.lessons.length} lessons, written from its own source book, Maarif Zamina, not from an atlas.` })));
     v.append(sec('Lessons', legend([['dl write', 'Writing'], ['dl ref', 'Refining'], ['dl deck', 'Decks'], ['dl sup', 'Supplements'], ['dl media', 'Audio and reader']]),
       h('div', { class: 'panel flush' }, h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, h('th', { text: 'Lesson' }), h('th', { text: 'Title' }), h('th', { text: 'What it has' }))),
-        h('tbody', {}, m.lessons.map(l => h('tr', {}, h('td', { class: 'code' }, readMrf(l.code) ? h('a', { href: readMrf(l.code), target: '_blank', rel: 'noopener', title: 'Read in Reading Mode', text: l.code }) : l.code), h('td', {}, ur(l.ur)), h('td', {}, chipsOf(l.has)))))))))); return; }
+        h('tbody', {}, m.lessons.map(l => h('tr', {}, h('td', { class: 'code' }, readMrf(l.code) ? h('a', { href: readMrf(l.code), target: 'rm', title: 'Read in Reading Mode', text: l.code }) : l.code), h('td', {}, ur(l.ur)), h('td', {}, chipsOf(l.has)))))))))); return; }
   const z = S.data.tazzakur;
   v.append(h('header', { class: 'head' }, h('h1', { text: 'Tazzakur, class LMM-01' }), h('p', { class: 'lede', text: 'One session a week, each from one hadith, topic or occasion.' })));
   v.append(sec('Sessions', null, h('div', { class: 'panel flush' }, h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, ['Session', 'Date', 'Starts from', 'Anchor', 'State'].map(t => h('th', { text: t })))),
-    h('tbody', {}, z.sessions.map(s => h('tr', {}, h('td', { class: 'code' }, readTaz(s.code) ? h('a', { href: readTaz(s.code), target: '_blank', rel: 'noopener', title: 'Read in Reading Mode', text: s.code }) : s.code), h('td', { text: fmtDay(s.date) }), h('td', { text: s.kind }), h('td', {}, ur(s.ur)), h('td', { text: s.state })))))))));
+    h('tbody', {}, z.sessions.map(s => h('tr', {}, h('td', { class: 'code' }, readTaz(s.code) ? h('a', { href: readTaz(s.code), target: 'rm', title: 'Read in Reading Mode', text: s.code }) : s.code), h('td', { text: fmtDay(s.date) }), h('td', { text: s.kind }), h('td', {}, ur(s.ur)), h('td', { text: s.state })))))))));
 }
 
 // ---------- mentor marks ----------
@@ -380,5 +382,6 @@ async function saveMentor(x, entry) {
   } finally { saving = false; }
 }
 
+try { window.name = 'wm'; } catch (e) {} // Reading Mode opens the Work Map in this same tab, and the Work Map opens Reading Mode in its one tab
 if (getKey()) load(); else connect();
 })();

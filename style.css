@@ -298,3 +298,10 @@ a.use:hover{text-decoration:underline}
   .frow .fs{grid-column:3}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* links into Reading Mode */
+a.cf{text-decoration:none;color:inherit}
+a.cf:hover{outline:1px solid var(--f)}
+a.ft{text-decoration:none;color:inherit}
+a.ft:hover .ur{text-decoration:underline;text-underline-offset:4px}
+.fs a{color:inherit}
