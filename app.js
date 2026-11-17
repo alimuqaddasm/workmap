@@ -79,9 +79,9 @@ const fcode = (a, u) => { const [b, f] = u.replace('U', '').split('.'); return `
 const fasl = (a, u) => { const [b] = u.replace('U', '').split('.'); const bb = a.babs.find(x => x.n === +b); return bb && bb.fasls.find(x => x.id === u.replace('U', '')); };
 
 // ---------- routing ----------
-function parse() { const [v, q] = location.hash.slice(1).split('?'); return { view: v === 'map' ? 'atlas' : ['atlas', 'course'].includes(v) ? v : 'week', p: new URLSearchParams(q || '') }; }
+function parse() { const [v, q] = location.hash.slice(1).split('?'); return { view: v === 'map' ? 'atlas' : ['atlas', 'course', 'ex44'].includes(v) ? v : 'week', p: new URLSearchParams(q || '') }; }
 function go(view, params) { const q = new URLSearchParams(); Object.entries(params || {}).forEach(([k, v]) => { if (v != null && v !== '') q.set(k, v); }); const next = '#' + view + (q.toString() ? '?' + q : ''); if (location.hash === next) route(); else location.hash = next; }
-function route() { if (!S.data) return; const { view, p } = parse(); side(view, p); if (view === 'atlas') renderAtlas(p); else if (view === 'course') renderCourse(p); else renderWeek(p); screen('app'); }
+function route() { if (!S.data) return; const { view, p } = parse(); side(view, p); if (view === 'ex44') renderEx44(); else if (view === 'atlas') renderAtlas(p); else if (view === 'course') renderCourse(p); else renderWeek(p); screen('app'); }
 window.addEventListener('hashchange', route);
 
 // ---------- load ----------
@@ -109,7 +109,8 @@ function side(view) {
     h('nav', { class: 'tabs', 'aria-label': 'Views' },
       h('a', { href: '#week', 'aria-current': view === 'week' ? 'page' : null, text: 'This week' }),
       h('a', { href: '#course', 'aria-current': view === 'course' ? 'page' : null, text: 'Courses' }),
-      h('a', { href: '#atlas', 'aria-current': view === 'atlas' ? 'page' : null, text: 'Atlases' })),
+      h('a', { href: '#atlas', 'aria-current': view === 'atlas' ? 'page' : null, text: 'Atlases' }),
+      h('a', { href: '#ex44', 'aria-current': view === 'ex44' ? 'page' : null, text: 'EX-44' })),
     h('span', { class: 'upd' }, h('span', { text: 'Updated ' + fmtWhen(S.data.made) }),
       h('button', { type: 'button', class: 'linkbtn', onclick: () => { setKey(''); S.data = null; connect('Your key was removed from this browser.'); }, text: 'Forget my key' })));
 }
@@ -117,6 +118,29 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 function fmtWhen(t) { const m = /(\d{4})-(\d\d)-(\d\d)[ T](\d\d:\d\d)/.exec(t || ''); return m ? `${+m[3]} ${MON[+m[2] - 1]}, ${m[4]}` : (t || ''); }
 function fmtDay(t) { const m = /(\d{4})-(\d\d)-(\d\d)/.exec(t || ''); return m ? `${+m[3]} ${MON[+m[2] - 1]}` : t; }
 const hubState = s => (s || '').replace(/(\d{4})-(\d\d)-(\d\d)/, (x) => fmtDay(x));
+
+// ---------- EX-44 (the working machine): jobs, accounts, what waits. Data: hub-notes/ex44.json, written by a script on EX-44 ----------
+const EX_TAG = { running: 'tag fin', stopped: 'tag rev', waiting: 'tag with', done: 'tag' };
+function exTable(heads, rows) { return h('div', { class: 'panel flush' }, h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, heads.map(t => h('th', { scope: 'col', text: t })))), h('tbody', {}, rows)))); }
+async function renderEx44() {
+  const v = $('#view'); v.replaceChildren(h('header', { class: 'head' }, h('h1', { text: 'EX-44' }), h('p', { class: 'lede', text: 'Loading the machine’s report.' })));
+  let d; try { d = (await readJson('ex44.json')).data; } catch (e) { v.replaceChildren(h('header', { class: 'head' }, h('h1', { text: 'EX-44' }), h('p', { class: 'lede', text: 'No report from EX-44 could be read: ' + (e.message || e) }))); return; }
+  if (parse().view !== 'ex44') return;
+  const jobs = d.jobs || [], open = jobs.filter(j => j.state !== 'done'), n = s => open.filter(j => j.state === s).length;
+  const age = Math.round((Date.now() - Date.parse(d.measured)) / 60000);
+  v.replaceChildren(h('header', { class: 'head' }, h('h1', { text: 'EX-44' }),
+    h('p', { class: 'lede', text: `${n('running')} running, ${n('stopped')} stopped, ${n('waiting')} waiting on you. Report from ${fmtWhen(d.measured)} UTC` + (age > 90 ? `, ${age} minutes old: the machine may be off or its timer stopped.` : '.') })));
+  v.append(sec('Jobs and chats', null, exTable(['Job', 'State', 'Account', 'Repo and branch', 'Note'],
+    open.sort((a, b) => (a.state > b.state ? -1 : a.state < b.state ? 1 : a.name.localeCompare(b.name))).map(j => h('tr', {}, h('td', { class: 'code', text: j.name }),
+      h('td', {}, h('span', { class: EX_TAG[j.state] || 'tag', text: j.state })), h('td', { text: j.account || '' }),
+      h('td', { text: j.repo && j.repo !== '-' ? `${j.repo} · ${j.branch}` : '' }), h('td', { class: 'muted small', text: j.note || j.brief || '' }))))));
+  v.append(sec('Accounts', null, exTable(['Account', 'Logged in', 'Plan', 'Chats'],
+    (d.accounts || []).map(a => h('tr', {}, h('td', { class: 'code', text: a.tag }), h('td', {}, h('span', { class: a.logged_in ? 'tag fin' : 'tag rev', text: a.logged_in ? 'yes' : 'no, log in' })),
+      h('td', { text: a.plan || '' }), h('td', { class: 'muted small', text: (a.chats || []).join(', ') }))))));
+  const wait = [['Waiting to publish to la57', d.to_publish], ['New or changed on la57, not on EX-44', d.new_on_la57], ['Artifacts waiting for editors', d.artifacts_waiting]];
+  v.append(sec('Waiting', null, h('div', { class: 'panel' }, wait.map(([t, x]) => h('p', {}, h('strong', { text: t + ': ' }), x == null ? 'not built yet' : Array.isArray(x) ? (x.length ? x.join(', ') : 'nothing') : String(x))))));
+  v.append(h('p', { class: 'muted small', text: `Model for new chats: ${d.model_default || '?'}. Index service: ${d.index_service || '?'}. Disk free: about ${d.disk_free_gb} GB.` }));
+}
 
 // ---------- shared pieces ----------
 const ST = ['cls', 'ref', 'tc', 'plan'];
