@@ -51,7 +51,7 @@ async function readJson(path) { const j = await gh(path, null, NOTES); return { 
 async function readData(path) { return JSON.parse(await gh(path, null, DATA, true)); }
 
 // ---------- data helpers ----------
-const S = { data: null, board: null, boardSha: null, reading: null };
+const S = { data: null, board: null, boardSha: null, reading: null, ex44: null, ex44at: 0 };
 // Reading Mode (the reading-mode site): full lesson text, read with this same key
 const RM = 'https://alimuqaddasm.github.io/reading-mode/';
 function readSabaq(cid, b, n) { const c = S.reading && S.reading.courses.find(x => x.id === cid); const bb = c && c.babs.find(x => x.n === b); const s = bb && bb.sabaq.find(x => x.n === n); return s ? { url: `${RM}#${cid}/${b}/${n}`, s } : null; }
@@ -119,27 +119,217 @@ function fmtWhen(t) { const m = /(\d{4})-(\d\d)-(\d\d)[ T](\d\d:\d\d)/.exec(t ||
 function fmtDay(t) { const m = /(\d{4})-(\d\d)-(\d\d)/.exec(t || ''); return m ? `${+m[3]} ${MON[+m[2] - 1]}` : t; }
 const hubState = s => (s || '').replace(/(\d{4})-(\d\d)-(\d\d)/, (x) => fmtDay(x));
 
-// ---------- EX-44 (the working machine): jobs, accounts, what waits. Data: hub-notes/ex44.json, written by a script on EX-44 ----------
-const EX_TAG = { running: 'tag fin', stopped: 'tag rev', waiting: 'tag with', done: 'tag' };
-function exTable(heads, rows) { return h('div', { class: 'panel flush' }, h('div', { class: 'scroll' }, h('table', { class: 't' }, h('thead', {}, h('tr', {}, heads.map(t => h('th', { scope: 'col', text: t })))), h('tbody', {}, rows)))); }
-async function renderEx44() {
-  const v = $('#view'); v.replaceChildren(h('header', { class: 'head' }, h('h1', { text: 'EX-44' }), h('p', { class: 'lede', text: 'Loading the machine’s report.' })));
-  let d; try { d = (await readJson('ex44.json')).data; } catch (e) { v.replaceChildren(h('header', { class: 'head' }, h('h1', { text: 'EX-44' }), h('p', { class: 'lede', text: 'No report from EX-44 could be read: ' + (e.message || e) }))); return; }
+// ---------- EX-44 (the working machine): every project and chat, what it is doing, what needs you ----------
+// Data: hub-notes/ex44.json, written every 10 minutes by ex44-system/tools/status.py (reads each chat's screen).
+// Filters live in the address: #ex44?s=asks&a=aw&q=b3&g=account&old=1&done=1
+const ACT = {
+  working: { t: 'working', d: 'Working now' },
+  asks: { t: 'asks you', d: 'Finished and waiting for your answer' },
+  login: { t: 'needs login', d: 'Sitting at the login screen' },
+  error: { t: 'error', d: 'Stopped on an error' },
+  limit: { t: 'at limit', d: 'Stopped by a usage limit' },
+  idle: { t: 'idle', d: 'Finished, nothing asked' },
+  stopped: { t: 'stopped', d: 'Chat closed or not found' },
+  waiting: { t: 'parked', d: 'Job parked, waiting' },
+  done: { t: 'done', d: 'Job finished' },
+  unknown: { t: 'unknown', d: 'Screen could not be read' }
+};
+const ACT_ORDER = ['asks', 'login', 'error', 'working', 'limit', 'idle', 'waiting', 'stopped', 'done', 'unknown'];
+const NEEDS = new Set(['asks', 'login', 'error']);
+const few = (ns, n) => ns.length <= (n || 8) ? ns.join(', ') : ns.slice(0, n || 8).join(', ') + ` and ${ns.length - (n || 8)} more`;
+const EXF = [['all', 'All'], ['needs', 'Needs you'], ['working', 'Working'], ['asks', 'Asks you'], ['limit', 'At limit'], ['idle', 'Idle'], ['stopped', 'Stopped']];
+const ACCTS = ['amm', 'sc21', 'wk', 'aw'];
+const EXO = 'ex44.open';
+const exOpen = (() => { try { return new Set(JSON.parse(localStorage.getItem(EXO) || '[]')); } catch (e) { return new Set(); } })();
+const exSave = () => { try { localStorage.setItem(EXO, JSON.stringify([...exOpen].slice(-200))); } catch (e) {} };
+const actOf = j => j.state === 'done' ? 'done' : j.screen ? (j.screen.activity || 'unknown') : j.state === 'waiting' ? 'waiting' : 'stopped';
+const baseOf = n => n.replace(/-was-\w+$/, '');
+const natural = (a, b) => a.localeCompare(b, 'en', { numeric: true });
+const isLead = j => /(^|-)hub(-planning)?$|hub-planning/.test(baseOf(j.name));
+function ago(t, now) {
+  const ms = now - Date.parse(t); if (!(ms >= 0)) return '';
+  const m = Math.round(ms / 60000); if (m < 2) return 'just now'; if (m < 60) return m + ' min ago';
+  const hh = Math.round(m / 60); if (hh < 36) return hh + ' h ago'; return Math.round(hh / 24) + ' days ago';
+}
+const localTime = t => { const d = new Date(t); return isNaN(d) ? '' : d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
+function exGo(patch) {
+  const { p } = parse(); const q = {}; for (const [k, v] of p) q[k] = v; Object.assign(q, patch);
+  Object.keys(q).forEach(k => { if (q[k] == null || q[k] === '' || q[k] === 'all' || q[k] === '0') delete q[k]; });
+  go('ex44', q);
+}
+async function exData(force) {
+  if (!force && S.ex44 && Date.now() - S.ex44at < 120000) return S.ex44;
+  S.ex44 = (await readJson('ex44.json')).data; S.ex44at = Date.now(); return S.ex44;
+}
+// auto refresh while the tab is open and visible
+setInterval(() => { if (document.visibilityState === 'visible' && parse().view === 'ex44' && S.ex44 && Date.now() - S.ex44at > 120000) exData(true).then(() => { if (parse().view === 'ex44') renderEx44(true); }).catch(() => {}); }, 30000);
+
+function exDot(act, title) { return h('span', { class: 'xdot x-' + act, title: title || ACT[act].d }); }
+function exTag(act) { return h('span', { class: 'xtag x-' + act, text: ACT[act].t }); }
+
+async function renderEx44(keepScroll) {
+  const v = $('#view'); const y = window.scrollY;
+  if (!S.ex44) v.replaceChildren(h('header', { class: 'head' }, h('h1', { text: 'EX-44' }), h('p', { class: 'lede', text: 'Loading the machine’s report.' })));
+  let d; try { d = await exData(); } catch (e) { v.replaceChildren(h('header', { class: 'head' }, h('h1', { text: 'EX-44' }), h('p', { class: 'lede', text: 'No report from EX-44 could be read: ' + (e.message || e) }))); return; }
   if (parse().view !== 'ex44') return;
-  const jobs = d.jobs || [], open = jobs.filter(j => j.state !== 'done'), n = s => open.filter(j => j.state === s).length;
+  const { p } = parse();
+  const F = { s: p.get('s') || 'all', a: p.get('a') || 'all', q: (p.get('q') || '').toLowerCase(), g: p.get('g') || 'project', old: p.get('old') === '1', done: p.get('done') === '1' };
+  const now = Date.parse(d.measured) || Date.now();
+  const all = (d.jobs || []).map(j => Object.assign({}, j, { act: actOf(j), project: j.project || 'Other' }));
+  const names = new Set(all.filter(j => j.state !== 'done').map(j => j.name));
+  all.forEach(j => { j.copyOf = j.name !== baseOf(j.name) && names.has(baseOf(j.name)) ? baseOf(j.name) : null; });
+  const live = all.filter(j => j.state !== 'done');
+  // what the filters keep
+  const passSt = (j, s) => s === 'all' ? true : s === 'needs' ? NEEDS.has(j.act) || !!(j.screen && j.screen.unsent) : s === 'stopped' ? ['stopped', 'waiting', 'unknown'].includes(j.act) : j.act === s;
+  const passS = j => passSt(j, F.s);
+  const passA = j => F.a === 'all' || j.account === F.a;
+  const passQ = j => !F.q || [j.name, j.project, j.repo, j.brief, j.note, j.screen && j.screen.said, (j.waiting || []).join(' ')].some(x => (x || '').toLowerCase().includes(F.q));
+  const pool = all.filter(j => (F.done || j.state !== 'done') && (F.old || !j.copyOf || F.q || F.s !== 'all'));
+  const shown = pool.filter(j => passS(j) && passA(j) && passQ(j));
+  const cnt = (list, f) => list.filter(f).length;
+
+  // ---- header: one line saying the state of things ----
+  const nNeeds = cnt(live, j => NEEDS.has(j.act)), nWork = cnt(live, j => j.act === 'working'), nLim = cnt(live, j => j.act === 'limit');
   const age = Math.round((Date.now() - Date.parse(d.measured)) / 60000);
-  v.replaceChildren(h('header', { class: 'head' }, h('h1', { text: 'EX-44' }),
-    h('p', { class: 'lede', text: `${n('running')} running, ${n('stopped')} stopped, ${n('waiting')} waiting on you. Report from ${fmtWhen(d.measured)} UTC` + (age > 90 ? `, ${age} minutes old: the machine may be off or its timer stopped.` : '.') })));
-  v.append(sec('Jobs and chats', null, exTable(['Job', 'State', 'Account', 'Repo and branch', 'Note'],
-    open.sort((a, b) => (a.state > b.state ? -1 : a.state < b.state ? 1 : a.name.localeCompare(b.name))).map(j => h('tr', {}, h('td', { class: 'code', text: j.name }),
-      h('td', {}, h('span', { class: EX_TAG[j.state] || 'tag', text: j.state })), h('td', { text: j.account || '' }),
-      h('td', { text: j.repo && j.repo !== '-' ? `${j.repo} · ${j.branch}` : '' }), h('td', { class: 'muted small', text: j.note || j.brief || '' }))))));
-  v.append(sec('Accounts', null, exTable(['Account', 'Logged in', 'Plan', 'Chats'],
-    (d.accounts || []).map(a => h('tr', {}, h('td', { class: 'code', text: a.tag }), h('td', {}, h('span', { class: a.logged_in ? 'tag fin' : 'tag rev', text: a.logged_in ? 'yes' : 'no, log in' })),
-      h('td', { text: a.plan || '' }), h('td', { class: 'muted small', text: (a.chats || []).join(', ') }))))));
-  const wait = [['Waiting to publish to la57', d.to_publish], ['Changed on la57, not sent back yet', d.unsent_on_la57], ['Waiting for Ali (Drive and send-back)', d.waiting_for_ali], ['Artifacts waiting for editors', d.artifacts_waiting]];
-  v.append(sec('Waiting', null, h('div', { class: 'panel' }, wait.map(([t, x]) => h('p', {}, h('strong', { text: t + ': ' }), x == null ? 'not built yet' : Array.isArray(x) ? (x.length ? x.join(', ') : 'nothing') : String(x))))));
-  v.append(h('p', { class: 'muted small', text: `Model for new chats: ${d.model_default || '?'}. Index service: ${d.index_service || '?'}. Disk free: about ${d.disk_free_gb} GB.` }));
+  const head = h('header', { class: 'head row' },
+    h('div', { class: 'head' }, h('h1', { text: 'EX-44' }),
+      h('p', { class: 'lede' }, `${live.length} chats in ${new Set(live.map(j => j.project)).size} projects. `,
+        h('span', { class: age > 30 ? 'err' : '', text: `Report from ${localTime(d.measured)}, ${ago(d.measured, Date.now())}` + (age > 30 ? ': the machine may be off or its timer stopped.' : '.') }), ' ',
+        h('button', { type: 'button', class: 'linkbtn', text: 'Refresh', onclick: () => exData(true).then(() => renderEx44(true)).catch(e => toast(e.message)) }))),
+    h('div', { class: 'totals xtot' },
+      [['needs', nNeeds, 'need you'], ['working', nWork, 'working'], ['limit', nLim, 'at a limit'], ['idle', cnt(live, j => j.act === 'idle'), 'idle']].map(([k, n, t]) =>
+        h('button', { type: 'button', class: 'xt' + (F.s === k ? ' on' : ''), 'aria-pressed': F.s === k ? 'true' : 'false', onclick: () => exGo({ s: F.s === k ? 'all' : k }) },
+          h('b', {}, exDot(k === 'needs' ? 'asks' : k), String(n)), h('span', { text: t })))));
+
+  // ---- filter bar ----
+  const search = h('input', { type: 'search', class: 'xq', placeholder: 'Search chats, projects, what they said  ( / )', value: p.get('q') || '', 'aria-label': 'Search' });
+  let tq; search.addEventListener('input', () => { clearTimeout(tq); tq = setTimeout(() => { exGo.typing = true; exGo({ q: search.value.trim() }); }, 250); });
+  search.addEventListener('keydown', e => { if (e.key === 'Escape') { search.value = ''; exGo({ q: '' }); } });
+  const chip = (on, label, n, onclick, cls) => h('button', { type: 'button', class: 'xc' + (on ? ' on' : '') + (cls ? ' ' + cls : ''), 'aria-pressed': on ? 'true' : 'false', onclick }, label, n == null ? null : h('span', { class: 'n', text: String(n) }));
+  const base = pool.filter(j => passA(j) && passQ(j)), baseS = pool.filter(j => passS(j) && passQ(j));
+  const bar = h('div', { class: 'xbar' },
+    h('div', { class: 'xrow' }, search,
+      h('div', { class: 'seg', role: 'group', 'aria-label': 'Group by' }, [['project', 'By project'], ['account', 'By account'], ['flat', 'One list']].map(([k, t]) =>
+        h('a', { href: '#', 'aria-current': F.g === k ? 'true' : null, text: t, onclick: e => { e.preventDefault(); exGo({ g: k === 'project' ? '' : k }); } })))),
+    h('div', { class: 'xrow' }, h('span', { class: 'xl', text: 'State' }),
+      EXF.map(([k, t]) => chip(F.s === k, k === 'all' ? t : [exDot(k === 'needs' ? 'asks' : k), t], k === 'all' ? base.length : cnt(base, j => passSt(j, k)), () => exGo({ s: k })))),
+    h('div', { class: 'xrow' }, h('span', { class: 'xl', text: 'Account' }),
+      [['all', 'All']].concat(ACCTS.map(a => [a, a])).map(([k, t]) => chip(F.a === k, t, k === 'all' ? baseS.length : cnt(baseS, j => j.account === k), () => exGo({ a: k }))),
+      h('span', { class: 'xsp' }),
+      chip(F.old, 'Earlier copies', cnt(live, j => j.copyOf), () => exGo({ old: F.old ? '' : '1' }), 'opt'),
+      chip(F.done, 'Finished jobs', cnt(all, j => j.state === 'done'), () => exGo({ done: F.done ? '' : '1' }), 'opt')));
+
+  // ---- needs you ----
+  const need = [], nl = live.filter(j => passA(j) && passQ(j)), narrowN = F.a !== 'all' || !!F.q;
+  (narrowN ? [] : (d.alerts || [])).filter(a => a.status === 'pending').forEach(a => need.push(['asks', h('b', { text: `Alert ${a.id}: approve a move?` }), a.text + ' Answer “yes ' + a.id + '” or “no ' + a.id + '” in any launch chat.']));
+  nl.filter(j => j.screen && j.screen.unsent).forEach(j => need.push(['asks', exLink(j, 'Unsent message in '), '“' + j.screen.unsent + '”. You typed this but never pressed Enter.']));
+  const logins = nl.filter(j => j.act === 'login'); if (logins.length) need.push(['login', h('b', { text: `${logins.length} chat${logins.length > 1 ? 's' : ''} at the login screen` }), logins.map(j => j.name).join(', ') + '. Press Enter in each, or close it.']);
+  const twins = nl.filter(j => j.copyOf && j.act !== 'limit' && j.act !== 'stopped' && (all.find(x => x.name === j.copyOf) || {}).act !== 'stopped');
+  if (twins.length) need.push(['idle', h('b', { text: `${twins.length} earlier copies still open next to their new chat` }), twins.map(j => j.name).join(', ') + '. Closing them frees memory and avoids two chats on one job.']);
+  const lim = {}; nl.filter(j => j.act === 'limit').forEach(j => { const k = j.account + '|' + ((j.screen && j.screen.resets) || ''); (lim[k] = lim[k] || []).push(j.name); });
+  Object.entries(lim).forEach(([k, ns]) => { const [a, r] = k.split('|'); need.push(['limit', h('b', { text: `${ns.length} chat${ns.length > 1 ? 's' : ''} on ${a} stopped by a limit` + (r ? `, resets ${r}` : '') }), few(ns)]); });
+  const w = d.waiting_for_ali || {}; const wn = (w.drive || 0) + (w.both_sides || 0);
+  if (wn && !narrowN) need.push(['asks', h('b', { text: `${wn} file${wn > 1 ? 's' : ''} waiting for your decision` }), `${w.drive || 0} changed on Drive by others, ${w.both_sides || 0} changed on both la57 and EX-44.`]);
+  if (d.unsent_on_la57 && !narrowN) need.push(['idle', h('b', { text: `${d.unsent_on_la57} files changed on la57, not sent back yet` }), 'They come back with la57’s next send-back.']);
+  const asks = nl.filter(j => j.act === 'asks');
+  const needSec = sec(h('h2', {}, 'Needs you' + (F.a !== 'all' ? ` on ${F.a} ` : ' '), h('span', { class: 'muted small', text: `${asks.length} chats asking, plus ${need.length} other item${need.length === 1 ? '' : 's'}` })), null,
+    h('div', { class: 'panel' }, need.length ? h('ul', { class: 'needs xneeds' }, need.map(([k, t, s]) => h('li', {}, exDot(k), h('span', {}, t, h('span', { text: s }))))) : h('p', { class: 'empty', text: 'Nothing beyond the chats asking you below.' }),
+      asks.length ? h('p', { class: 'small' }, h('a', { href: '#ex44?s=asks', onclick: e => { e.preventDefault(); exGo({ s: 'asks' }); }, text: `Show the ${asks.length} chats that asked you something` })) : null));
+
+  // ---- groups ----
+  const groupKey = F.g === 'account' ? (j => j.account || '?') : F.g === 'flat' ? (() => 'All chats') : (j => j.project);
+  const groups = {}; shown.forEach(j => { (groups[groupKey(j)] = groups[groupKey(j)] || []).push(j); });
+  const totalsBy = {}; pool.forEach(j => { (totalsBy[groupKey(j)] = totalsBy[groupKey(j)] || []).push(j); });
+  const gnames = Object.keys(groups).sort((a, b) => (a === 'Other') - (b === 'Other') || (a === 'Account homes') - (b === 'Account homes') || natural(a, b));
+  const narrowed = F.s !== 'all' || F.a !== 'all' || F.q;
+  const list = h('div', { class: 'xgroups' }, gnames.length ? gnames.map(g => exGroup(g, groups[g], totalsBy[g] || groups[g], F, now, narrowed || F.g === 'flat')) : h('div', { class: 'panel' }, h('p', { class: 'empty', text: 'No chat matches these filters.' }),
+    h('p', {}, h('button', { type: 'button', class: 'btn', text: 'Clear filters', onclick: () => go('ex44', {}) }))));
+  const listSec = sec(h('h2', {}, F.g === 'account' ? 'Accounts and their chats ' : F.g === 'flat' ? 'Chats ' : 'Projects and their chats ', h('span', { class: 'muted small', text: `${shown.length} shown` })),
+    gnames.length > 1 ? h('span', { class: 'mbtns' }, h('button', { type: 'button', class: 'linkbtn', text: 'Open all', onclick: () => { gnames.forEach(g => exOpen.add('g:' + g)); exSave(); renderEx44(true); } }),
+      h('button', { type: 'button', class: 'linkbtn', text: 'Close all', onclick: () => { gnames.forEach(g => exOpen.delete('g:' + g)); exSave(); renderEx44(true); } })) : null, list);
+
+  // ---- accounts and machine ----
+  const accSec = sec('Accounts', null, h('div', { class: 'xacc' }, (d.accounts || []).map(a => {
+    const js = live.filter(j => j.account === a.tag); const k = {}; js.forEach(j => { k[j.act] = (k[j.act] || 0) + 1; });
+    const rs = [...new Set(js.filter(j => j.act === 'limit').map(j => j.screen.resets).filter(Boolean))];
+    return h('button', { type: 'button', class: 'panel xa' + (F.a === a.tag ? ' on' : ''), onclick: () => exGo({ a: F.a === a.tag ? 'all' : a.tag }) },
+      h('span', { class: 'ph' }, h('b', { class: 'code', text: a.tag }), h('span', { class: a.logged_in ? 'tag fin' : 'tag rev', text: a.logged_in ? (a.plan || 'logged in') : 'logged out' })),
+      h('span', { class: 'xstrip' }, js.slice().sort((x, y) => ACT_ORDER.indexOf(x.act) - ACT_ORDER.indexOf(y.act)).map(j => exDot(j.act, j.name + ': ' + ACT[j.act].d))),
+      h('span', { class: 'small muted', text: `${js.length} chats: ` + ACT_ORDER.filter(x => k[x]).map(x => `${k[x]} ${ACT[x].t}`).join(', ') }),
+      rs.length ? h('span', { class: 'small', text: 'Limit resets ' + rs.join('; ') }) : null);
+  })));
+  const foot = h('p', { class: 'muted small', text: `Model for new chats: ${d.model_default || '?'}. Index service: ${d.index_service || '?'}. Disk free: about ${d.disk_free_gb} GB.` + (d.to_publish == null ? '' : ` Waiting to publish to la57: ${d.to_publish}.`) });
+  const legendRow = h('p', { class: 'xleg' }, ACT_ORDER.filter(k => k !== 'unknown').map(k => h('span', {}, exDot(k), ACT[k].t)));
+
+  v.replaceChildren(head, bar, needSec, listSec, accSec, legendRow, foot);
+  if (keepScroll) window.scrollTo(0, y);
+  document.onkeydown = e => { if (e.key === '/' && parse().view === 'ex44' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); search.focus(); } };
+  if (exGo.typing) { exGo.typing = false; search.focus(); const n = search.value.length; search.setSelectionRange(n, n); }
+}
+function exLink(j, pre) { return h('b', {}, pre || '', h('a', { href: '#ex44?q=' + encodeURIComponent(j.name), text: j.name })); }
+
+function exGroup(g, js, tot, F, now, open) {
+  const key = 'g:' + g; const isOpen = open || exOpen.has(key);
+  const k = {}; tot.forEach(j => { k[j.act] = (k[j.act] || 0) + 1; });
+  const latest = tot.map(j => j.screen && j.screen.changed).filter(Boolean).sort().pop();
+  const repos = [...new Set(tot.map(j => j.repo).filter(r => r && r !== '-'))];
+  // nest earlier copies under the chat that took over
+  const byName = {}; js.forEach(j => { byName[j.name] = j; });
+  const top = js.filter(j => !(j.copyOf && byName[j.copyOf])).sort((a, b) => isLead(b) - isLead(a) || natural(a.name, b.name));
+  const det = h('details', { class: 'xg panel flush', open: isOpen ? true : null },
+    h('summary', { class: 'xgs' },
+      h('span', { class: 'xchev', 'aria-hidden': 'true' }, icon(10, 10, 'M3 1 L7 5 L3 9', '1.8')),
+      h('span', { class: 'xgt' }, h('b', { text: g }), h('span', { class: 'small muted', text: `${tot.length} chat${tot.length === 1 ? '' : 's'}` + (repos.length && F.g !== 'project' ? '' : repos.length ? ' · repo ' + repos.join(', ') : '') })),
+      h('span', { class: 'xstrip' }, tot.slice().sort((a, b) => ACT_ORDER.indexOf(a.act) - ACT_ORDER.indexOf(b.act)).map(j => exDot(j.act, j.name + ': ' + ACT[j.act].d))),
+      h('span', { class: 'xgc small' }, ACT_ORDER.filter(x => k[x] && x !== 'idle' && x !== 'done').map(x => h('span', { class: 'xgn x-' + x, text: `${k[x]} ${ACT[x].t}` })), k.idle ? h('span', { class: 'muted', text: `${k.idle} idle` }) : null),
+      h('span', { class: 'xga small muted', text: latest ? ago(latest, now) : '' })));
+  det.addEventListener('toggle', () => { det.open ? exOpen.add(key) : exOpen.delete(key); exSave(); });
+  const rows = h('div', { class: 'xchats' });
+  top.forEach(j => { rows.append(exChat(j, now, false)); js.filter(c => c.copyOf === j.name).forEach(c => rows.append(exChat(c, now, true))); });
+  det.append(rows);
+  return det;
+}
+
+function exChat(j, now, nested) {
+  const sc = j.screen || {}; const key = 'c:' + j.name;
+  const said = sc.said || j.note || j.brief || '';
+  const when = sc.changed ? ago(sc.changed, now) : j.changed ? ago(j.changed, now) : '';
+  const det = h('details', { class: 'xc-row' + (nested ? ' nested' : ''), open: exOpen.has(key) ? true : null },
+    h('summary', {},
+      exDot(j.act),
+      h('span', { class: 'xn' }, h('span', { class: 'code', text: j.name }),
+        nested ? h('span', { class: 'xbadge', text: 'earlier copy' }) : null,
+        isLead(j) ? h('span', { class: 'xbadge lead', text: 'lead' }) : null,
+        h('span', { class: 'xacct', text: j.account || '' })),
+      h('span', { class: 'xs' }, exTag(j.act),
+        j.act === 'limit' && sc.resets ? h('span', { class: 'small muted', text: 'resets ' + sc.resets }) : null,
+        sc.unsent ? h('span', { class: 'xbadge warn', text: 'unsent text' }) : null,
+        sc.remote_off ? h('span', { class: 'xbadge', title: 'Remote Control was ended from another device', text: 'phone link off' }) : null),
+      h('span', { class: 'xsaid' + (said === sc.said ? '' : ' muted'), text: said }),
+      h('span', { class: 'xw small muted', text: when })));
+  det.addEventListener('toggle', () => { det.open ? exOpen.add(key) : exOpen.delete(key); exSave(); });
+  const kv = (k, v) => v ? h('div', { class: 'xkv' }, h('span', { class: 'dk', text: k }), typeof v === 'string' ? h('span', { text: v }) : v) : null;
+  const ul = xs => xs && xs.length ? h('ul', { class: 'xul' }, xs.map(x => h('li', { text: x }))) : null;
+  const attach = 'tmux attach -t ' + j.name;
+  det.append(h('div', { class: 'xd' },
+    h('div', { class: 'dcol' },
+      kv('Last thing it said' + (sc.done_at ? ` (finished ${sc.done_at})` : ''), sc.said ? h('p', { class: 'xfull', text: sc.said }) : null),
+      kv('Last message it got', sc.you_asked || null),
+      kv('You typed but did not send', sc.unsent || null),
+      kv('Waiting on you (job note)', ul(j.waiting)),
+      kv('Next (job note)', ul(j.next)),
+      !sc.said && (j.note || j.brief) ? kv('Note', j.note || j.brief) : null),
+    h('div', { class: 'dcol xside' },
+      kv('State', `${ACT[j.act].d}` + (sc.changed ? `. Screen last changed ${localTime(sc.changed)}` : '') + '.'),
+      kv('Project', j.project + (j.repo && j.repo !== '-' ? ` (repo ${j.repo})` : '')),
+      kv('Branch', j.branch && j.branch !== '-' ? j.branch : null),
+      kv('Last commit', j.commit ? `${localTime(j.commit.when)}: ${j.commit.msg}` : null),
+      kv('Memory used', sc.memory_k ? h('span', { class: 'xmem' }, h('i', {}, h('i', { style: `width:${Math.min(100, sc.memory_k / 10)}%` })), `${sc.memory_k}k tokens` + (sc.memory_k > 600 ? ': near full, a fresh chat would be faster' : '')) : null),
+      kv('Helpers', sc.helpers || sc.shells ? `${sc.helpers || 0} subagents, ${sc.shells || 0} shells` : null),
+      kv('Started', j.started ? (j.started.startsWith('before') ? j.started : localTime(j.started)) : null),
+      kv('Model', j.model || null),
+      h('div', { class: 'mbtns' }, h('button', { type: 'button', class: 'btn', text: 'Copy attach command', onclick: () => { navigator.clipboard.writeText(attach).then(() => toast('Copied: ' + attach), () => toast(attach)); } })))));
+  return det;
 }
 
 // ---------- shared pieces ----------
