@@ -137,7 +137,7 @@ async function renderEx44() {
   v.append(sec('Accounts', null, exTable(['Account', 'Logged in', 'Plan', 'Chats'],
     (d.accounts || []).map(a => h('tr', {}, h('td', { class: 'code', text: a.tag }), h('td', {}, h('span', { class: a.logged_in ? 'tag fin' : 'tag rev', text: a.logged_in ? 'yes' : 'no, log in' })),
       h('td', { text: a.plan || '' }), h('td', { class: 'muted small', text: (a.chats || []).join(', ') }))))));
-  const wait = [['Waiting to publish to la57', d.to_publish], ['New or changed on la57, not on EX-44', d.new_on_la57], ['Artifacts waiting for editors', d.artifacts_waiting]];
+  const wait = [['Waiting to publish to la57', d.to_publish], ['Changed on la57, not sent back yet', d.unsent_on_la57], ['Waiting for Ali (Drive and send-back)', d.waiting_for_ali], ['Artifacts waiting for editors', d.artifacts_waiting]];
   v.append(sec('Waiting', null, h('div', { class: 'panel' }, wait.map(([t, x]) => h('p', {}, h('strong', { text: t + ': ' }), x == null ? 'not built yet' : Array.isArray(x) ? (x.length ? x.join(', ') : 'nothing') : String(x))))));
   v.append(h('p', { class: 'muted small', text: `Model for new chats: ${d.model_default || '?'}. Index service: ${d.index_service || '?'}. Disk free: about ${d.disk_free_gb} GB.` }));
 }
