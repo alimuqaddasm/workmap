@@ -6,7 +6,8 @@ It blocks EX-44 paths, briefs, plans and job notes, and keys or tokens. The same
   - on GitHub after the push, as `.github/publiccheck.py`, run by `.github/workflows/public-check.yml`.
 
   publiccheck.py scan [REF] [-C DIR]   check the files at REF (default HEAD) of the repo in DIR (default .)
-  publiccheck.py hook                  pre-push hook mode: reads git's pre-push lines on stdin
+  publiccheck.py history [REF]         check every commit reachable from REF (GitHub runs this)
+  publiccheck.py hook                  pre-push hook mode: checks every commit the push sends
   publiccheck.py install DIR           put the pre-push hook into DIR's .git/hooks (touches no tracked file)
   publiccheck.py files DIR             write `.github/publiccheck.py` and the workflow into DIR's working tree
                                        (commit and push them on a branch yourself)
@@ -53,7 +54,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 .github/publiccheck.py scan HEAD
+        with:
+          fetch-depth: 0
+      - run: python3 .github/publiccheck.py history HEAD
 """
 MAIN_TOOL = os.path.join("/srv", "ws", "_repo", "ex44-system", "tools", "publiccheck.py")  # split: never matches itself
 HOOK = """#!/bin/sh
@@ -72,6 +75,16 @@ def git(repo, *a, data=False):
     return r.stdout if data else r.stdout.decode("utf-8", "replace")
 
 
+SEEN = {}  # blob id -> [(line, rule)], so each file version is read once
+
+
+def scan_commits(repo, commits):
+    out = []
+    for c in commits:
+        out += scan(repo, c)
+    return out
+
+
 def scan(repo, ref):
     """Return findings [(path, line, rule)] for the tree at ref."""
     out = []
@@ -88,7 +101,11 @@ def scan(repo, ref):
         for name, rx in PATHS:
             if rx.search(path):
                 out.append((path, 0, name))
-        blobs.append((sha.decode(), path))
+        sha = sha.decode()
+        if sha in SEEN:
+            out += [(path, ln, n) for ln, n in SEEN[sha]]
+        else:
+            blobs.append((sha, path))
     if not blobs:
         return out
     p = subprocess.run(["git", "cat-file", "--batch"], cwd=repo, capture_output=True,
@@ -99,11 +116,13 @@ def scan(repo, ref):
         size = int(buf[i:nl].split()[2])
         body = buf[nl + 1: nl + 1 + size]
         i = nl + 1 + size + 1
+        hits = SEEN[sha] = []
         if b"\0" in body[:8000]:
             continue  # binary
         for name, rx in CONTENT:
             for m in rx.finditer(body):
-                out.append((path, body.count(b"\n", 0, m.start()) + 1, name))
+                hits.append((body.count(b"\n", 0, m.start()) + 1, name))
+        out += [(path, ln, n) for ln, n in hits]
     return out
 
 
@@ -114,7 +133,7 @@ def report(findings, where):
     print(f"publiccheck: BLOCKED, {len(findings)} private thing(s) in {where}:")
     for path, line, name in sorted(set(findings)):
         print(f"  {path}:{line}  {name}" if line else f"  {path}  {name} (file name)")
-    print("Remove them (a new commit) and push again. The matched text is never shown.")
+    print("Take them out of every commit listed (rewrite local commits not yet pushed) and push again.\nThe matched text is never shown.")
     return 1
 
 
@@ -129,13 +148,19 @@ def main(argv):
             k = rest.index("-C"); repo = rest[k + 1]; del rest[k:k + 2]
         ref = rest[0] if rest else "HEAD"
         return report(scan(repo, ref), ref)
+    if cmd == "history":
+        ref = rest[0] if rest else "HEAD"
+        commits = git(".", "rev-list", ref).split()
+        return report(scan_commits(".", commits), f"{len(commits)} commits of {ref}")
     if cmd == "hook":
         bad = 0
         for line in sys.stdin.read().splitlines():
             parts = line.split()
             if len(parts) != 4 or parts[1] == ZERO:
                 continue  # a branch delete pushes nothing
-            bad |= report(scan(".", parts[1]), f"{parts[0]} {parts[1][:8]}")
+            # every commit this push sends, not only the newest (a removed plant still sits in history)
+            commits = git(".", "rev-list", parts[1], "--not", "--remotes").split() or [parts[1]]
+            bad |= report(scan_commits(".", commits), f"{parts[0]}, {len(commits)} new commit(s)")
         return bad
     if cmd == "install" and rest:
         repo = os.path.abspath(rest[0])
