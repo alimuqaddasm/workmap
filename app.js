@@ -51,7 +51,7 @@ async function readJson(path) { const j = await gh(path, null, NOTES); return { 
 async function readData(path) { return JSON.parse(await gh(path, null, DATA, true)); }
 
 // ---------- data helpers ----------
-const S = { data: null, board: null, boardSha: null, reading: null, ex44: null, ex44at: 0 };
+const S = { data: null, board: null, boardSha: null, reading: null, ex44: null, ex44at: 0, me: undefined, reqs: null };
 // Reading Mode (the reading-mode site): full lesson text, read with this same key
 const RM = 'https://alimuqaddasm.github.io/reading-mode/';
 function readSabaq(cid, b, n) { const c = S.reading && S.reading.courses.find(x => x.id === cid); const bb = c && c.babs.find(x => x.n === b); const s = bb && bb.sabaq.find(x => x.n === n); return s ? { url: `${RM}#${cid}/${b}/${n}`, s } : null; }
@@ -119,6 +119,121 @@ function fmtWhen(t) { const m = /(\d{4})-(\d\d)-(\d\d)[ T](\d\d:\d\d)/.exec(t ||
 function fmtDay(t) { const m = /(\d{4})-(\d\d)-(\d\d)/.exec(t || ''); return m ? `${+m[3]} ${MON[+m[2] - 1]}` : t; }
 const hubState = s => (s || '').replace(/(\d{4})-(\d\d)-(\d\d)/, (x) => fmtDay(x));
 
+// ---------- EX-44 actions (Ali's GO 2026-11-19). A click files hub-notes/requests/<id>.json; EX-44 (tools/requests.py,
+// every minute) checks it was made by Ali's account, then runs it through job.py or alerts.py and logs the result
+// in requests/log.json. Nothing here acts on the machine directly. ----------
+const ME = 'alimuqaddasm';
+const ACT_WORD = { approve: 'Approve', refuse: 'Refuse', send: 'Reply', 'send-when-free': 'Reply when free', key: 'Key', archive: 'Archive', reopen: 'Reopen', move: 'Move' };
+async function whoAmI() {
+  if (S.me !== undefined) return S.me;
+  try { const r = await fetch('https://api.github.com/user', { headers: { Authorization: 'Bearer ' + getKey(), Accept: 'application/vnd.github+json' } }); S.me = r.ok ? (await r.json()).login : null; }
+  catch (e) { S.me = null; }
+  return S.me;
+}
+const canAct = () => S.me === ME;
+function describe(q) {
+  const t = q.target ? ` ${q.target}` : '';
+  switch (q.action) {
+    case 'approve': return `Approve alert ${q.alert}: the chats in it are moved`;
+    case 'refuse': return `Refuse alert ${q.alert}: nothing moves`;
+    case 'send': return `Type into${t} and press Enter: “${q.text}”` + ({ 'after-draft': ' (your unsent text is sent first)', 'replace-draft': ' (your unsent text is cleared first)', 'join-draft': ' (joined after your unsent text)' }[q.mode] || '');
+    case 'send-when-free': return `When${t} is off its limit, type: “${q.text}”`;
+    case 'key': return q.key === 'enter' ? `Press Enter in${t}` : `Clear the input box in${t}`;
+    case 'archive': return `Archive${t}: its session ends, nothing is deleted, its transcript stays and Unarchive brings it back` + (q.force ? ' (even though it is working)' : '');
+    case 'reopen': return `Reopen${t} on its account, carrying on where it stopped`;
+    case 'move': return `Move${t} to ${q.to}`;
+  }
+  return q.action;
+}
+async function fileReq(q, quiet) {
+  if (!canAct()) { toast('Actions need your own GitHub key (' + ME + ').'); return false; }
+  if (!quiet && !window.confirm(describe(q) + '\n\nEX-44 does this within about a minute. Go ahead?')) return false;
+  const id = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + '-' + Math.random().toString(36).slice(2, 7);
+  Object.assign(q, { id, made: new Date().toISOString().slice(0, 19) + 'Z' });
+  try {
+    await gh(`requests/${id}.json`, { method: 'PUT', headers: { Authorization: 'Bearer ' + getKey(), Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: `Work Map action: ${q.action} ${q.target || q.alert || ''}`.trim(), content: b64enc(JSON.stringify(q, null, 1) + '\n'), branch: 'main' }) });
+  } catch (e) { toast('Not sent: ' + (e.status === 403 || e.status === 404 ? 'the key cannot write to hub-notes.' : e.message || e)); return false; }
+  S.reqs = S.reqs || { pending: [], log: [] }; S.reqs.pending.unshift(q);
+  if (!quiet) toast('Sent. EX-44 picks it up within about a minute.');
+  exReqPoll(); exReqPanel();
+  return true;
+}
+async function exReqLoad() {
+  let pending = [], log = [];
+  try { const ls = await gh('requests', null, NOTES); pending = (Array.isArray(ls) ? ls : []).filter(f => f.type === 'file' && /\.json$/.test(f.name) && f.name !== 'log.json').map(f => ({ id: f.name.replace(/\.json$/, '') })); } catch (e) {}
+  try { log = (await readJson('requests/log.json')).data || []; } catch (e) {}
+  const known = (S.reqs && S.reqs.pending) || [];
+  pending = pending.map(p => known.find(k => k.id === p.id) || p);
+  known.forEach(k => { if (!pending.find(p => p.id === k.id) && !log.find(l => l.id === k.id) && Date.now() - Date.parse(k.made) < 90000) pending.unshift(k); });
+  S.reqs = { pending, log };
+}
+function exReqPoll() {
+  clearTimeout(exReqPoll.t);
+  exReqPoll.t = setTimeout(async () => { await exReqLoad(); exReqPanel(); if (S.reqs.pending.length) exReqPoll(); else exData(true).then(() => { if (parse().view === 'ex44') renderEx44(true).then(exFlash); }).catch(() => {}); }, 20000);
+}
+const RST = { done: 'tag fin', failed: 'tag rev', refused: 'tag rev', expired: 'tag', waiting: 'tag with', sent: 'tag with' };
+function exReqPanel() {
+  const box = document.getElementById('xreqs'); if (!box || !S.reqs) return;
+  const rows = S.reqs.pending.map(q => ({ q, st: q.action === 'send-when-free' ? 'waiting' : 'sent' })).concat(S.reqs.log.slice(0, 12).map(l => ({ q: l, st: l.status })));
+  box.replaceChildren(rows.length ? h('ul', { class: 'xreql' }, rows.map(({ q, st }) => h('li', {},
+    h('span', { class: RST[st] || 'tag', text: st === 'sent' ? 'on its way' : st }),
+    h('span', {}, h('b', { text: (ACT_WORD[q.action] || q.action || 'Action') + (q.target ? ' · ' + q.target : '') }), q.reason ? h('span', { class: 'small muted', text: ' ' + q.reason } ) : null),
+    h('span', { class: 'small muted', text: q.at ? localTime(q.at) : q.made ? localTime(q.made) : '' })))) : h('p', { class: 'empty', text: 'No actions yet. Buttons are in each chat, in Needs you and on alerts.' }));
+}
+// the action area inside an opened chat
+function exChatActions(j) {
+  if (!canAct()) return null;
+  const sc = j.screen || {}, act = j.act, wrap = h('div', { class: 'xact' });
+  const ta = h('textarea', { class: 'xta', rows: 2, placeholder: `Reply to ${j.name}…`, 'aria-label': `Reply to ${j.name}` });
+  const send = (mode, when) => { const text = ta.value.trim(); if (!text) { ta.focus(); return; } fileReq({ action: when ? 'send-when-free' : 'send', target: j.name, text, mode: mode || 'plain' }).then(ok => { if (ok) ta.value = ''; }); };
+  const b = (t, f, cls) => h('button', { type: 'button', class: 'btn' + (cls ? ' ' + cls : ''), text: t, onclick: f });
+  const btns = h('div', { class: 'mbtns' });
+  if (j.state === 'archived') { wrap.append(h('div', { class: 'mbtns' }, b('Unarchive (reopen)', () => fileReq({ action: 'reopen', target: j.name }), 'dark'))); return wrap; }
+  if (act === 'stopped') { wrap.append(h('p', { class: 'small muted', text: 'This chat is closed. Reopen it first; then you can reply.' }), h('div', { class: 'mbtns' }, b('Reopen', () => fileReq({ action: 'reopen', target: j.name }), 'dark'), b('Archive', () => fileReq({ action: 'archive', target: j.name })))); return wrap; }
+  wrap.append(ta);
+  if (act === 'limit') {
+    btns.append(b('Send when it resets', () => send('plain', true), 'dark'));
+    ACCTS.filter(a => a !== j.account).forEach(a => btns.append(b('Move to ' + a, () => fileReq({ action: 'move', target: j.name, to: a }))));
+    wrap.append(h('p', { class: 'small muted', text: `At its limit${sc.resets ? ' until ' + sc.resets : ''}. Your reply can wait and go in by itself, or move the chat to an account with room, then reply.` }));
+  } else if (act === 'login') {
+    btns.append(b('Press Enter', () => fileReq({ action: 'key', target: j.name, key: 'enter' }), 'dark'));
+    wrap.append(h('p', { class: 'small muted', text: 'It is at the login screen. Press Enter first; if it is fully logged out, run its account command (for example cc-' + j.account + ') and /login, or move it.' }));
+    ACCTS.filter(a => a !== j.account).forEach(a => btns.append(b('Move to ' + a, () => fileReq({ action: 'move', target: j.name, to: a }))));
+  } else if (sc.unsent) {
+    wrap.append(h('p', { class: 'small' }, 'Your unsent text is in its box: ', h('b', { text: '“' + sc.unsent + '”' })));
+    btns.append(b('Send mine, then this', () => send('after-draft'), 'dark'), b('Replace mine with this', () => send('replace-draft')), b('Join into one', () => send('join-draft')),
+      b('Just send mine', () => fileReq({ action: 'key', target: j.name, key: 'enter' })), b('Clear mine', () => fileReq({ action: 'key', target: j.name, key: 'clear' })));
+  } else {
+    btns.append(b(act === 'working' ? 'Send (it reads it after this step)' : 'Send', () => send('plain'), 'dark'));
+  }
+  btns.append(h('span', { class: 'xsp' }), b('Archive', () => fileReq({ action: 'archive', target: j.name, force: act === 'working' }), act === 'working' ? 'warn' : ''));
+  wrap.append(btns);
+  ta.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); btns.querySelector('.btn.dark') && btns.querySelector('.btn.dark').click(); } });
+  return wrap;
+}
+// bulk: tick chats, send one line to all
+const exSel = new Set();
+function exBulkBar() {
+  const bar = document.getElementById('xbulk'); if (!bar) return;
+  if (!exSel.size) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const ta = h('textarea', { class: 'xta', rows: 1, placeholder: `One line for ${exSel.size} chats…` });
+  bar.replaceChildren(h('b', { text: `${exSel.size} chosen` }), ta,
+    h('button', { type: 'button', class: 'btn dark', text: 'Send to all', onclick: async () => {
+      const text = ta.value.trim(); if (!text) { ta.focus(); return; }
+      if (!window.confirm(`Type this into ${exSel.size} chats and press Enter:\n“${text}”\n\n${[...exSel].join(', ')}\n\nChats at a limit, at login or with your unsent text will refuse it. Go ahead?`)) return;
+      let n = 0; for (const t of exSel) { if (await fileReq({ action: 'send', target: t, text, mode: 'plain' }, true)) n++; }
+      toast(`Sent ${n} of ${exSel.size}. EX-44 picks them up within about a minute.`); exSel.clear(); renderEx44(true);
+    } }),
+    h('button', { type: 'button', class: 'btn', text: 'Archive all', onclick: async () => {
+      if (!window.confirm(`Archive ${exSel.size} chats? Their sessions end; nothing is deleted; Unarchive brings each back.\n\n${[...exSel].join(', ')}`)) return;
+      let n = 0; for (const t of exSel) { if (await fileReq({ action: 'archive', target: t }, true)) n++; }
+      toast(`Archive sent for ${n} of ${exSel.size}.`); exSel.clear(); renderEx44(true);
+    } }),
+    h('button', { type: 'button', class: 'linkbtn', text: 'Clear', onclick: () => { exSel.clear(); renderEx44(true); } }));
+}
+
 // ---------- EX-44 (the working machine): every project and chat, what it is doing, what needs you ----------
 // Data: hub-notes/ex44.json, written every 10 minutes by ex44-system/tools/status.py (reads each chat's screen).
 // Filters live in the address: #ex44?s=asks&a=aw&q=b3&g=account&old=1&done=1
@@ -132,9 +247,10 @@ const ACT = {
   stopped: { t: 'stopped', d: 'Chat closed or not found' },
   waiting: { t: 'parked', d: 'Job parked, waiting' },
   done: { t: 'done', d: 'Job finished' },
+  archived: { t: 'archived', d: 'Archived: session ended, transcript kept' },
   unknown: { t: 'unknown', d: 'Screen could not be read' }
 };
-const ACT_ORDER = ['asks', 'login', 'error', 'working', 'limit', 'idle', 'waiting', 'stopped', 'done', 'unknown'];
+const ACT_ORDER = ['asks', 'login', 'error', 'working', 'limit', 'idle', 'waiting', 'stopped', 'done', 'archived', 'unknown'];
 const NEEDS = new Set(['asks', 'login', 'error']);
 const few = (ns, n) => ns.length <= (n || 8) ? ns.join(', ') : ns.slice(0, n || 8).join(', ') + ` and ${ns.length - (n || 8)} more`;
 const EXF = [['all', 'All'], ['needs', 'Needs you'], ['working', 'Working'], ['asks', 'Asks you'], ['limit', 'At limit'], ['idle', 'Idle'], ['stopped', 'Stopped']];
@@ -142,7 +258,7 @@ const ACCTS = ['amm', 'sc21', 'wk', 'aw'];
 const EXO = 'ex44.open';
 const exOpen = (() => { try { return new Set(JSON.parse(localStorage.getItem(EXO) || '[]')); } catch (e) { return new Set(); } })();
 const exSave = () => { try { localStorage.setItem(EXO, JSON.stringify([...exOpen].slice(-200))); } catch (e) {} };
-const actOf = j => j.state === 'done' ? 'done' : j.screen ? (j.screen.activity || 'unknown') : j.state === 'waiting' ? 'waiting' : 'stopped';
+const actOf = j => j.state === 'archived' ? 'archived' : j.state === 'done' ? 'done' : j.screen ? (j.screen.activity || 'unknown') : j.state === 'waiting' ? 'waiting' : 'stopped';
 const baseOf = n => n.replace(/-was-\w+(-\d+)?$/, '');
 const natural = (a, b) => a.localeCompare(b, 'en', { numeric: true });
 const isLead = j => /(^|-)hub(-planning)?$|hub-planning/.test(baseOf(j.name));
@@ -172,20 +288,21 @@ async function renderEx44(keepScroll) {
   const v = $('#view'); const y = window.scrollY;
   if (!S.ex44) v.replaceChildren(h('header', { class: 'head' }, h('h1', { text: 'EX-44' }), h('p', { class: 'lede', text: 'Loading the machine’s report.' })));
   let d; try { d = await exData(); } catch (e) { v.replaceChildren(h('header', { class: 'head' }, h('h1', { text: 'EX-44' }), h('p', { class: 'lede', text: 'No report from EX-44 could be read: ' + (e.message || e) }))); return; }
+  await whoAmI(); if (!S.reqs) await exReqLoad();
   if (parse().view !== 'ex44') return;
   const { p } = parse();
-  const F = { s: p.get('s') || 'all', a: p.get('a') || 'all', q: (p.get('q') || '').toLowerCase(), g: p.get('g') || 'project', old: p.get('old') === '1', done: p.get('done') === '1' };
+  const F = { s: p.get('s') || 'all', a: p.get('a') || 'all', q: (p.get('q') || '').toLowerCase(), g: p.get('g') || 'project', old: p.get('old') === '1', done: p.get('done') === '1', arch: p.get('arch') === '1' };
   const now = Date.parse(d.measured) || Date.now();
   const all = (d.jobs || []).map(j => Object.assign({}, j, { act: actOf(j), project: j.project || 'Other' }));
-  const names = new Set(all.filter(j => j.state !== 'done').map(j => j.name));
+  const names = new Set(all.filter(j => j.state !== 'done' && j.state !== 'archived').map(j => j.name));
   all.forEach(j => { j.copyOf = j.name !== baseOf(j.name) && names.has(baseOf(j.name)) ? baseOf(j.name) : null; });
-  const live = all.filter(j => j.state !== 'done');
+  const live = all.filter(j => j.state !== 'done' && j.state !== 'archived');
   // what the filters keep
   const passSt = (j, s) => s === 'all' ? true : s === 'needs' ? NEEDS.has(j.act) || !!(j.screen && j.screen.unsent) : s === 'stopped' ? ['stopped', 'waiting', 'unknown'].includes(j.act) : j.act === s;
   const passS = j => passSt(j, F.s);
   const passA = j => F.a === 'all' || j.account === F.a;
   const passQ = j => !F.q || [j.name, j.project, j.repo, j.brief, j.note, j.screen && j.screen.said, (j.waiting || []).join(' ')].some(x => (x || '').toLowerCase().includes(F.q));
-  const pool = all.filter(j => (F.done || j.state !== 'done') && (F.old || !j.copyOf || F.q || F.s !== 'all'));
+  const pool = all.filter(j => (F.done || j.state !== 'done') && (F.arch || j.state !== 'archived') && (F.old || !j.copyOf || F.q || F.s !== 'all'));
   const shown = pool.filter(j => passS(j) && passA(j) && passQ(j));
   const cnt = (list, f) => list.filter(f).length;
 
@@ -218,14 +335,16 @@ async function renderEx44(keepScroll) {
       [['all', 'All']].concat(ACCTS.map(a => [a, a])).map(([k, t]) => chip(F.a === k, t, k === 'all' ? baseS.length : cnt(baseS, j => j.account === k), () => exGo({ a: k }))),
       h('span', { class: 'xsp' }),
       chip(F.old, 'Earlier copies', cnt(live, j => j.copyOf), () => exGo({ old: F.old ? '' : '1' }), 'opt'),
-      chip(F.done, 'Finished jobs', cnt(all, j => j.state === 'done'), () => exGo({ done: F.done ? '' : '1' }), 'opt')));
+      chip(F.done, 'Finished jobs', cnt(all, j => j.state === 'done'), () => exGo({ done: F.done ? '' : '1' }), 'opt'),
+      chip(F.arch, 'Archived', cnt(all, j => j.state === 'archived'), () => exGo({ arch: F.arch ? '' : '1' }), 'opt')));
 
   // ---- needs you ----
   const need = [], nl = live.filter(j => passA(j) && passQ(j)), narrowN = F.a !== 'all' || !!F.q;
-  nl.filter(j => j.screen && j.screen.unsent).forEach(j => need.push(['asks', exLink(j, 'Unsent message in '), '“' + j.screen.unsent + '”. You typed this but never pressed Enter.']));
-  const logins = nl.filter(j => j.act === 'login'); if (logins.length) need.push(['login', h('b', { text: `${logins.length} chat${logins.length > 1 ? 's' : ''} at the login screen` }), logins.map(j => j.name).join(', ') + '. Press Enter in each, or close it.']);
+  const nb = (t, f) => canAct() ? h('button', { type: 'button', class: 'btn sm', text: t, onclick: f }) : null;
+  nl.filter(j => j.screen && j.screen.unsent).forEach(j => need.push(['asks', exLink(j, 'Unsent message in '), '“' + j.screen.unsent + '”. You typed this but never pressed Enter.', [nb('Send it', () => fileReq({ action: 'key', target: j.name, key: 'enter' })), nb('Clear it', () => fileReq({ action: 'key', target: j.name, key: 'clear' }))]]));
+  const logins = nl.filter(j => j.act === 'login'); if (logins.length) need.push(['login', h('b', { text: `${logins.length} chat${logins.length > 1 ? 's' : ''} at the login screen` }), logins.map(j => j.name).join(', ') + '. Press Enter in each, or archive it.', logins.map(j => nb('Press Enter in ' + j.name, () => fileReq({ action: 'key', target: j.name, key: 'enter' })))]);
   const twins = nl.filter(j => j.copyOf && j.act !== 'limit' && j.act !== 'stopped' && (all.find(x => x.name === j.copyOf) || {}).act !== 'stopped');
-  if (twins.length) need.push(['idle', h('b', { text: `${twins.length} earlier copies still open next to their new chat` }), twins.map(j => j.name).join(', ') + '. Closing them frees memory and avoids two chats on one job.']);
+  if (twins.length) need.push(['idle', h('b', { text: `${twins.length} earlier copies still open next to their new chat` }), twins.map(j => j.name).join(', ') + '. Archiving them frees memory and avoids two chats on one job.', [nb('Archive these ' + twins.length, async () => { if (!window.confirm(`Archive ${twins.length} earlier copies? Sessions end; nothing is deleted; Unarchive brings each back.\n\n${twins.map(j => j.name).join(', ')}`)) return; for (const j of twins) await fileReq({ action: 'archive', target: j.name }, true); toast('Archive sent for ' + twins.length + ' chats.'); })]]);
   const lim = {}; nl.filter(j => j.act === 'limit').forEach(j => { const k = j.account + '|' + ((j.screen && j.screen.resets) || ''); (lim[k] = lim[k] || []).push(j.name); });
   Object.entries(lim).forEach(([k, ns]) => { const [a, r] = k.split('|'); need.push(['limit', h('b', { text: `${ns.length} chat${ns.length > 1 ? 's' : ''} on ${a} stopped by a limit` + (r ? `, resets ${r}` : '') }), few(ns)]); });
   const w = d.waiting_for_ali || {}; const wn = (w.drive || 0) + (w.both_sides || 0);
@@ -233,7 +352,7 @@ async function renderEx44(keepScroll) {
   if (d.unsent_on_la57 && !narrowN) need.push(['idle', h('b', { text: `${d.unsent_on_la57} files changed on la57, not sent back yet` }), 'They come back with la57’s next send-back.']);
   const asks = nl.filter(j => j.act === 'asks');
   const needSec = sec(h('h2', {}, 'Needs you' + (F.a !== 'all' ? ` on ${F.a} ` : ' '), h('span', { class: 'muted small', text: `${asks.length} chats asking, plus ${need.length} other item${need.length === 1 ? '' : 's'}` })), null,
-    h('div', { class: 'panel' }, need.length ? h('ul', { class: 'needs xneeds' }, need.map(([k, t, s]) => h('li', {}, exDot(k), h('span', {}, t, h('span', { text: s }))))) : h('p', { class: 'empty', text: 'Nothing beyond the chats asking you below.' }),
+    h('div', { class: 'panel' }, need.length ? h('ul', { class: 'needs xneeds' }, need.map(([k, t, s, bt]) => h('li', {}, exDot(k), h('span', {}, t, h('span', { text: s }), bt && bt.filter(Boolean).length ? h('span', { class: 'mbtns' }, bt) : null)))) : h('p', { class: 'empty', text: 'Nothing beyond the chats asking you below.' }),
       asks.length ? h('p', { class: 'small' }, h('a', { href: '#ex44?s=asks', onclick: e => { e.preventDefault(); exGo({ s: 'asks' }); }, text: `Show the ${asks.length} chats that asked you something` })) : null));
 
   // ---- groups ----
@@ -261,7 +380,10 @@ async function renderEx44(keepScroll) {
   const foot = h('p', { class: 'muted small', text: `Model for new chats: ${d.model_default || '?'}. Index service: ${d.index_service || '?'}. Disk free: about ${d.disk_free_gb} GB.` + (d.to_publish == null ? '' : ` Waiting to publish to la57: ${d.to_publish}.`) });
   const legendRow = h('p', { class: 'xleg' }, ACT_ORDER.filter(k => k !== 'unknown').map(k => h('span', {}, exDot(k), ACT[k].t)));
 
-  v.replaceChildren(head, bar, needSec, listSec, accSec, legendRow, foot);
+  const reqSec = canAct() ? sec(h('h2', {}, 'Your actions ', h('span', { class: 'muted small', text: 'what you asked EX-44 to do, newest first' })), null, h('div', { class: 'panel', id: 'xreqs' })) : null;
+  const bulk = h('div', { class: 'xbulkbar', id: 'xbulk', hidden: true });
+  v.replaceChildren(head, bar, needSec, reqSec, listSec, accSec, legendRow, foot, bulk);
+  exReqPanel(); exBulkBar(); if (S.reqs && S.reqs.pending.length) exReqPoll();
   if (keepScroll) window.scrollTo(0, y);
   document.onkeydown = e => { if (e.key === '/' && parse().view === 'ex44' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); search.focus(); } };
   if (exGo.typing) { exGo.typing = false; search.focus(); const n = search.value.length; search.setSelectionRange(n, n); }
@@ -280,7 +402,8 @@ function exBanner(d) {
         h('span', { class: 'small', text: localTime(a.created) })),
       h('p', { text: `${(a.chats || []).length} chat${(a.chats || []).length === 1 ? '' : 's'} of ${String(a.project || '').replace(/^\d+ - /, '')}` + (pend ? ' stopped at a limit. Move them?' : '.') }),
       h('ul', { class: 'xful' }, moves),
-      pend ? h('p', { class: 'xfa' }, 'Answer in any launch chat: ', h('b', { class: 'code', text: `yes ${a.id}` }), ' or ', h('b', { class: 'code', text: `no ${a.id}` }), '.')
+      pend && canAct() ? h('div', { class: 'mbtns' }, h('button', { type: 'button', class: 'btn dark', text: `Yes, move them (yes ${a.id})`, onclick: () => fileReq({ action: 'approve', alert: a.id }) }), h('button', { type: 'button', class: 'btn', text: `No (no ${a.id})`, onclick: () => fileReq({ action: 'refuse', alert: a.id }) })) : null,
+      pend ? h('p', { class: 'xfa' }, canAct() ? 'Or answer in any launch chat: ' : 'Answer in any launch chat: ', h('b', { class: 'code', text: `yes ${a.id}` }), ' or ', h('b', { class: 'code', text: `no ${a.id}` }), '.')
         : a.status === 'done' ? h('button', { type: 'button', class: 'btn', text: 'Seen, hide it', onclick: () => { try { localStorage.setItem(EXSEEN, JSON.stringify(seenAl().concat(a.id).slice(-100))); } catch (e) {} route(); } }) : null);
   }));
 }
@@ -321,6 +444,7 @@ function exChat(j, now, nested) {
   const when = sc.changed ? ago(sc.changed, now) : j.changed ? ago(j.changed, now) : '';
   const det = h('details', { class: 'xc-row' + (nested ? ' nested' : ''), open: exOpen.has(key) ? true : null },
     h('summary', {},
+      canAct() && !['archived', 'done'].includes(j.act) ? h('input', { type: 'checkbox', class: 'xsel', 'aria-label': 'Choose ' + j.name, checked: exSel.has(j.name) ? true : null, onclick: e => { e.stopPropagation(); e.target.checked ? exSel.add(j.name) : exSel.delete(j.name); exBulkBar(); } }) : null,
       exDot(j.act),
       h('span', { class: 'xn' }, h('span', { class: 'code', text: j.name }),
         nested ? h('span', { class: 'xbadge', text: 'earlier copy' }) : null,
@@ -338,6 +462,7 @@ function exChat(j, now, nested) {
   const attach = 'tmux attach -t ' + j.name;
   det.append(h('div', { class: 'xd' },
     h('div', { class: 'dcol' },
+      exChatActions(j),
       kv('Last thing it said' + (sc.done_at ? ` (finished ${sc.done_at})` : ''), sc.said ? h('p', { class: 'xfull', text: sc.said }) : null),
       kv('Last message it got', sc.you_asked || null),
       kv('You typed but did not send', sc.unsent || null),
