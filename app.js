@@ -143,7 +143,7 @@ const EXO = 'ex44.open';
 const exOpen = (() => { try { return new Set(JSON.parse(localStorage.getItem(EXO) || '[]')); } catch (e) { return new Set(); } })();
 const exSave = () => { try { localStorage.setItem(EXO, JSON.stringify([...exOpen].slice(-200))); } catch (e) {} };
 const actOf = j => j.state === 'done' ? 'done' : j.screen ? (j.screen.activity || 'unknown') : j.state === 'waiting' ? 'waiting' : 'stopped';
-const baseOf = n => n.replace(/-was-\w+$/, '');
+const baseOf = n => n.replace(/-was-\w+(-\d+)?$/, '');
 const natural = (a, b) => a.localeCompare(b, 'en', { numeric: true });
 const isLead = j => /(^|-)hub(-planning)?$|hub-planning/.test(baseOf(j.name));
 function ago(t, now) {
