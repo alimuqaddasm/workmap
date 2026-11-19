@@ -81,7 +81,7 @@ const fasl = (a, u) => { const [b] = u.replace('U', '').split('.'); const bb = a
 // ---------- routing ----------
 function parse() { const [v, q] = location.hash.slice(1).split('?'); return { view: v === 'map' ? 'atlas' : ['atlas', 'course', 'ex44'].includes(v) ? v : 'week', p: new URLSearchParams(q || '') }; }
 function go(view, params) { const q = new URLSearchParams(); Object.entries(params || {}).forEach(([k, v]) => { if (v != null && v !== '') q.set(k, v); }); const next = '#' + view + (q.toString() ? '?' + q : ''); if (location.hash === next) route(); else location.hash = next; }
-function route() { if (!S.data) return; const { view, p } = parse(); side(view, p); if (view === 'ex44') renderEx44(); else if (view === 'atlas') renderAtlas(p); else if (view === 'course') renderCourse(p); else renderWeek(p); screen('app'); }
+function route() { if (!S.data) return; const { view, p } = parse(); side(view, p); if (view === 'ex44') renderEx44().then(exFlash); else { if (view === 'atlas') renderAtlas(p); else if (view === 'course') renderCourse(p); else renderWeek(p); exFlash(); } screen('app'); }
 window.addEventListener('hashchange', route);
 
 // ---------- load ----------
@@ -162,7 +162,8 @@ async function exData(force) {
   S.ex44 = (await readJson('ex44.json')).data; S.ex44at = Date.now(); return S.ex44;
 }
 // auto refresh while the tab is open and visible
-setInterval(() => { if (document.visibilityState === 'visible' && parse().view === 'ex44' && S.ex44 && Date.now() - S.ex44at > 120000) exData(true).then(() => { if (parse().view === 'ex44') renderEx44(true); }).catch(() => {}); }, 30000);
+setInterval(() => { if (document.visibilityState === 'visible' && S.ex44 && Date.now() - S.ex44at > 120000) { if (parse().view !== 'ex44') { exData(true).then(exFlash).catch(() => {}); return; } }
+  if (document.visibilityState === 'visible' && parse().view === 'ex44' && S.ex44 && Date.now() - S.ex44at > 120000) exData(true).then(() => { if (parse().view === 'ex44') renderEx44(true).then(exFlash); }).catch(() => {}); }, 30000);
 
 function exDot(act, title) { return h('span', { class: 'xdot x-' + act, title: title || ACT[act].d }); }
 function exTag(act) { return h('span', { class: 'xtag x-' + act, text: ACT[act].t }); }
@@ -195,7 +196,7 @@ async function renderEx44(keepScroll) {
     h('div', { class: 'head' }, h('h1', { text: 'EX-44' }),
       h('p', { class: 'lede' }, `${live.length} chats in ${new Set(live.map(j => j.project)).size} projects. `,
         h('span', { class: age > 30 ? 'err' : '', text: `Report from ${localTime(d.measured)}, ${ago(d.measured, Date.now())}` + (age > 30 ? ': the machine may be off or its timer stopped.' : '.') }), ' ',
-        h('button', { type: 'button', class: 'linkbtn', text: 'Refresh', onclick: () => exData(true).then(() => renderEx44(true)).catch(e => toast(e.message)) }))),
+        h('button', { type: 'button', class: 'linkbtn', text: 'Refresh', onclick: () => exData(true).then(() => renderEx44(true)).then(exFlash).catch(e => toast(e.message)) }))),
     h('div', { class: 'totals xtot' },
       [['needs', nNeeds, 'need you'], ['working', nWork, 'working'], ['limit', nLim, 'at a limit'], ['idle', cnt(live, j => j.act === 'idle'), 'idle']].map(([k, n, t]) =>
         h('button', { type: 'button', class: 'xt' + (F.s === k ? ' on' : ''), 'aria-pressed': F.s === k ? 'true' : 'false', onclick: () => exGo({ s: F.s === k ? 'all' : k }) },
@@ -221,7 +222,6 @@ async function renderEx44(keepScroll) {
 
   // ---- needs you ----
   const need = [], nl = live.filter(j => passA(j) && passQ(j)), narrowN = F.a !== 'all' || !!F.q;
-  (narrowN ? [] : (d.alerts || [])).filter(a => a.status === 'pending').forEach(a => need.push(['asks', h('b', { text: `Alert ${a.id}: approve a move?` }), a.text + ' Answer “yes ' + a.id + '” or “no ' + a.id + '” in any launch chat.']));
   nl.filter(j => j.screen && j.screen.unsent).forEach(j => need.push(['asks', exLink(j, 'Unsent message in '), '“' + j.screen.unsent + '”. You typed this but never pressed Enter.']));
   const logins = nl.filter(j => j.act === 'login'); if (logins.length) need.push(['login', h('b', { text: `${logins.length} chat${logins.length > 1 ? 's' : ''} at the login screen` }), logins.map(j => j.name).join(', ') + '. Press Enter in each, or close it.']);
   const twins = nl.filter(j => j.copyOf && j.act !== 'limit' && j.act !== 'stopped' && (all.find(x => x.name === j.copyOf) || {}).act !== 'stopped');
@@ -265,6 +265,31 @@ async function renderEx44(keepScroll) {
   if (keepScroll) window.scrollTo(0, y);
   document.onkeydown = e => { if (e.key === '/' && parse().view === 'ex44' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); search.focus(); } };
   if (exGo.typing) { exGo.typing = false; search.focus(); const n = search.value.length; search.setSelectionRange(n, n); }
+}
+// move alerts from the mover (state/alerts.json via the report): pending ones flash on every tab until answered
+const EXSEEN = 'ex44.seenAlerts';
+const seenAl = () => { try { return JSON.parse(localStorage.getItem(EXSEEN) || '[]'); } catch (e) { return []; } };
+function exAlerts(d) { const seen = seenAl(); return (d && d.alerts || []).filter(a => a.status === 'pending' || a.status === 'approved' || (a.status === 'done' && !seen.includes(a.id))); }
+function exBanner(d) {
+  const al = exAlerts(d); if (!al.length) return null;
+  return h('div', { class: 'xflash-wrap', role: 'alert' }, al.map(a => {
+    const pend = a.status === 'pending', moving = a.status === 'approved';
+    const moves = (a.chats || []).map(c => h('li', {}, h('b', { class: 'code', text: c.name }), ` ${c.from} → ${c.to || 'no account fits'}` + (c.result && c.result !== 'moved' ? ` (${c.result})` : '')));
+    return h('div', { class: 'xflash' + (pend ? ' pend' : ' info') },
+      h('div', { class: 'xfh' }, h('b', { text: pend ? `ALERT ${a.id}: waiting for your yes or no` : moving ? `ALERT ${a.id}: approved, moving now` : `MOVED ${a.id}: done` + (a.answered_by ? ` (answered in ${a.answered_by})` : '') }),
+        h('span', { class: 'small', text: localTime(a.created) })),
+      h('p', { text: `${(a.chats || []).length} chat${(a.chats || []).length === 1 ? '' : 's'} of ${String(a.project || '').replace(/^\d+ - /, '')}` + (pend ? ' stopped at a limit. Move them?' : '.') }),
+      h('ul', { class: 'xful' }, moves),
+      pend ? h('p', { class: 'xfa' }, 'Answer in any launch chat: ', h('b', { class: 'code', text: `yes ${a.id}` }), ' or ', h('b', { class: 'code', text: `no ${a.id}` }), '.')
+        : a.status === 'done' ? h('button', { type: 'button', class: 'btn', text: 'Seen, hide it', onclick: () => { try { localStorage.setItem(EXSEEN, JSON.stringify(seenAl().concat(a.id).slice(-100))); } catch (e) {} route(); } }) : null);
+  }));
+}
+async function exFlash() {
+  try { await exData(); } catch (e) { return; }
+  const v = $('#view'); v.querySelectorAll(':scope > .xflash-wrap').forEach(x => x.remove());
+  const b = exBanner(S.ex44); if (b) v.prepend(b);
+  const n = exAlerts(S.ex44).filter(a => a.status === 'pending').length, tab = document.querySelector('.tabs a[href="#ex44"]');
+  if (tab) { tab.querySelectorAll('.xbub').forEach(x => x.remove()); if (n) tab.append(h('span', { class: 'xbub', title: `${n} alert${n > 1 ? 's' : ''} waiting`, text: String(n) })); }
 }
 function exLink(j, pre) { return h('b', {}, pre || '', h('a', { href: '#ex44?q=' + encodeURIComponent(j.name), text: j.name })); }
 

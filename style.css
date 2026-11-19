@@ -384,3 +384,17 @@ a.ft:hover .ur{text-decoration:underline;text-underline-offset:4px}
   .xbar{top:0;position:static;margin:0}
   .xl{width:auto}
 }
+/* move alerts: flash on every tab until answered (planner and mover-rules, 2026-11-19) */
+.xflash-wrap{display:flex;flex-direction:column;gap:10px;margin-bottom:-14px}
+.xflash{border-radius:16px;padding:16px 20px;display:flex;flex-direction:column;gap:6px;background:var(--panel);box-shadow:var(--shadow)}
+.xflash.pend{background:#fff1ee;border:2px solid var(--need);animation:xflash 1.2s ease-in-out infinite}
+.xflash.info{background:var(--l-1);border:1.5px solid var(--l)}
+@keyframes xflash{50%{background:#ffd9d1;box-shadow:0 0 0 6px rgba(194,65,45,.18)}}
+.xfh{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline}
+.xfh b{font-size:18px;letter-spacing:-.01em}
+.xflash.pend .xfh b{color:var(--need)}
+.xful{margin:0;padding-left:18px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:2px 16px;font-size:13px}
+.xfa{font-size:14px}
+.xflash .btn{align-self:flex-start}
+.xbub{display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:9px;background:var(--need);color:#fff;font-size:11px;font-weight:700;margin-left:6px;padding:0 5px;vertical-align:1px;animation:xflash-b 1.2s ease-in-out infinite}
+@keyframes xflash-b{50%{opacity:.45}}
