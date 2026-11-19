@@ -151,8 +151,13 @@ async function fileReq(q, quiet) {
   const id = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + '-' + Math.random().toString(36).slice(2, 7);
   Object.assign(q, { id, made: new Date().toISOString().slice(0, 19) + 'Z' });
   try {
-    await gh(`requests/${id}.json`, { method: 'PUT', headers: { Authorization: 'Bearer ' + getKey(), Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: `Work Map action: ${q.action} ${q.target || q.alert || ''}`.trim(), content: b64enc(JSON.stringify(q, null, 1) + '\n'), branch: 'main' }) });
+    for (let i = 0; ; i++) {   // GitHub answers 409 when the repo moved at the same moment (EX-44 pushing); try again
+      try {
+        await gh(`requests/${id}.json`, { method: 'PUT', headers: { Authorization: 'Bearer ' + getKey(), Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: `Work Map action: ${q.action} ${q.target || q.alert || ''}`.trim(), content: b64enc(JSON.stringify(q, null, 1) + '\n'), branch: 'main' }) });
+        break;
+      } catch (e) { if ((e.status === 409 || e.status === 422) && i < 4) { await new Promise(r => setTimeout(r, 1200 * (i + 1))); continue; } throw e; }
+    }
   } catch (e) { toast('Not sent: ' + (e.status === 403 || e.status === 404 ? 'the key cannot write to hub-notes.' : e.message || e)); return false; }
   S.reqs = S.reqs || { pending: [], log: [] }; S.reqs.pending.unshift(q);
   if (!quiet) toast('Sent. EX-44 picks it up within about a minute.');
@@ -181,6 +186,8 @@ function exReqPanel() {
     h('span', {}, h('b', { text: (ACT_WORD[q.action] || q.action || 'Action') + (q.target ? ' · ' + q.target : '') }), q.reason ? h('span', { class: 'small muted', text: ' ' + q.reason } ) : null),
     h('span', { class: 'small muted', text: q.at ? localTime(q.at) : q.made ? localTime(q.made) : '' })))) : h('p', { class: 'empty', text: 'No actions yet. Buttons are in each chat, in Needs you and on alerts.' }));
 }
+// job.py move only moves launcher jobs (with a repo and working copy); older chats can't be moved
+const movable = j => !!(j.repo && j.repo !== '-' && j.branch && j.branch !== '-');
 // the action area inside an opened chat
 function exChatActions(j) {
   if (!canAct()) return null;
@@ -194,12 +201,12 @@ function exChatActions(j) {
   wrap.append(ta);
   if (act === 'limit') {
     btns.append(b('Send when it resets', () => send('plain', true), 'dark'));
-    ACCTS.filter(a => a !== j.account).forEach(a => btns.append(b('Move to ' + a, () => fileReq({ action: 'move', target: j.name, to: a }))));
-    wrap.append(h('p', { class: 'small muted', text: `At its limit${sc.resets ? ' until ' + sc.resets : ''}. Your reply can wait and go in by itself, or move the chat to an account with room, then reply.` }));
+    if (movable(j)) ACCTS.filter(a => a !== j.account).forEach(a => btns.append(b('Move to ' + a, () => fileReq({ action: 'move', target: j.name, to: a }))));
+    wrap.append(h('p', { class: 'small muted', text: `At its limit${sc.resets ? ' until ' + sc.resets : ''}. Your reply can wait and go in by itself` + (movable(j) ? ', or move the chat to an account with room, then reply.' : '. It started before the launcher, so it cannot be moved.') }));
   } else if (act === 'login') {
     btns.append(b('Press Enter', () => fileReq({ action: 'key', target: j.name, key: 'enter' }), 'dark'));
     wrap.append(h('p', { class: 'small muted', text: 'It is at the login screen. Press Enter first; if it is fully logged out, run its account command (for example cc-' + j.account + ') and /login, or move it.' }));
-    ACCTS.filter(a => a !== j.account).forEach(a => btns.append(b('Move to ' + a, () => fileReq({ action: 'move', target: j.name, to: a }))));
+    if (movable(j)) ACCTS.filter(a => a !== j.account).forEach(a => btns.append(b('Move to ' + a, () => fileReq({ action: 'move', target: j.name, to: a }))));
   } else if (sc.unsent) {
     wrap.append(h('p', { class: 'small' }, 'Your unsent text is in its box: ', h('b', { text: '“' + sc.unsent + '”' })));
     btns.append(b('Send mine, then this', () => send('after-draft'), 'dark'), b('Replace mine with this', () => send('replace-draft')), b('Join into one', () => send('join-draft')),
