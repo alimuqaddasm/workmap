@@ -91,6 +91,7 @@ async function load() {
     const [w, b] = await Promise.all([readData('workmap.json'), readJson('marks.json')]);
     S.data = w; S.board = { workmap: b.data || {} }; S.boardSha = b.sha;
     try { S.reading = await readData('reading/index.json'); } catch (e) { S.reading = null; }
+    try { S.layers = EX44Badge.read((await readJson('layers.json')).data); } catch (e) { S.layers = null; }
     route();
   } catch (e) {
     if (e.status === 401 || e.status === 404) { setKey(''); connect(e.status === 404 ? 'This key cannot open hub-data and hub-notes. Make a key for those two repos (steps above) and paste it here.' : e.message); return; }
@@ -102,6 +103,23 @@ $('#keyform').addEventListener('submit', e => { e.preventDefault(); const v = $(
 $('#retry').addEventListener('click', load);
 $('#rekey').addEventListener('click', () => { setKey(''); connect(); });
 
+// ---------- lesson badges (plan P7.2): the shared kit/badge.js reads hub-notes/layers.json, written on EX-44.
+// The page hands it numbers only; mentor view (Preview, Approved) is the default, "All layers" adds In main and Draft. ----------
+const BV = 'workmap.badges';
+const badgeView = () => { try { return localStorage.getItem(BV) === 'all' ? 'all' : 'mentor'; } catch (e) { return 'mentor'; } };
+function setBadgeView(v) { try { v === 'all' ? localStorage.setItem(BV, 'all') : localStorage.removeItem(BV); } catch (e) {} route(); }
+function lbadge(x) {
+  const b = S.layers && S.layers.badge(x.c.code, { bab: x.b.n, sabaq: x.H.h, hub: x.H.h }, { view: badgeView() });
+  return b ? h('span', { class: b.cls, title: b.tip, text: b.word }) : null;
+}
+function badgeBar() {
+  if (typeof EX44Badge !== 'undefined') EX44Badge.injectCss(document);
+  const a = S.layers ? S.layers.asOf() : { text: 'lesson status: not known', old: true }, v = badgeView();
+  return h('span', { class: 'bview' }, h('span', { class: 'ex44-asof' + (a.old ? ' ex44-asof--old' : ''), title: 'When EX-44 last measured each lesson\'s layer', text: 'Badges ' + a.text }),
+    h('button', { type: 'button', class: 'linkbtn', 'aria-pressed': v === 'all' ? 'true' : 'false', title: v === 'all' ? 'Back to the mentor view: Preview and Approved only' : 'Also show In main and Draft',
+      onclick: () => setBadgeView(v === 'all' ? 'mentor' : 'all'), text: v === 'all' ? 'All layers' : 'Mentor view' }));
+}
+
 // ---------- top bar ----------
 function side(view) {
   const el = $('#side'); el.replaceChildren();
@@ -111,7 +129,7 @@ function side(view) {
       h('a', { href: '#course', 'aria-current': view === 'course' ? 'page' : null, text: 'Courses' }),
       h('a', { href: '#atlas', 'aria-current': view === 'atlas' ? 'page' : null, text: 'Atlases' }),
       h('a', { href: '#ex44', 'aria-current': view === 'ex44' ? 'page' : null, text: 'EX-44' })),
-    h('span', { class: 'upd' }, h('span', { text: 'Updated ' + fmtWhen(S.data.made) }),
+    h('span', { class: 'upd' }, h('span', { text: 'Updated ' + fmtWhen(S.data.made) }), badgeBar(),
       h('button', { type: 'button', class: 'linkbtn', onclick: () => { setKey(''); S.data = null; connect('Your key was removed from this browser.'); }, text: 'Forget my key' })));
 }
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -531,7 +549,7 @@ function renderWeek() {
   if (nx) {
     const has = new Set(nx.H.has); const a = atlasOf(nx.c.atlas);
     top.append(h('article', { class: 'panel next' },
-      h('div', { class: 'ph' }, h('h2', { text: 'Next class' }), h('span', { class: 'ltag', text: nextLabel(nx) })),
+      h('div', { class: 'ph' }, h('h2', { text: 'Next class' }), h('span', {}, h('span', { class: 'ltag', text: nextLabel(nx) }), ' ', lbadge(nx))),
       h('div', { class: 'nt' }, ur(nx.H.ur, 'big', 'p'),
         h('span', { class: 'from', text: `from hub sabaq ${code(nx)}` + ((nx.H.fasls || []).length ? `, built on ${a.name} B${nx.b.from} ` + nx.H.fasls.map(u => 'F' + u.split('.')[1]).join(' and ') : '') })),
       h('div', { class: 'ready' }, h('span', { class: 'muted small', text: 'Ready for class when all four are done' }),
@@ -539,7 +557,7 @@ function renderWeek() {
       h('span', { style: 'display:flex;gap:16px;flex-wrap:wrap' }, h('a', { class: 'more', href: `#course?c=${nx.c.id}&b=${nx.b.n}&s=${sid(nx)}`, text: 'Open this sabaq' }),
         readSabaq(nx.c.id, nx.b.n, nx.H.h) ? h('a', { class: 'more', href: readSabaq(nx.c.id, nx.b.n, nx.H.h).url, target: 'rm', text: 'Read it in Reading Mode' }) : null),
       planned.length > 1 ? h('div', { class: 'after' }, h('span', { class: 'muted small', text: 'After that' }),
-        planned.slice(1, 4).map(x => h('a', { class: 'arow', href: `#course?c=${x.c.id}&b=${x.b.n}&s=${sid(x)}` }, ur(x.H.ur), h('span', { class: 'lcode', text: `${nextLabel(x)} · from S${x.H.h}` })))) : null));
+        planned.slice(1, 4).map(x => h('a', { class: 'arow', href: `#course?c=${x.c.id}&b=${x.b.n}&s=${sid(x)}` }, ur(x.H.ur), h('span', { class: 'lcode', text: `${nextLabel(x)} · from S${x.H.h}` }), lbadge(x)))) : null));
   } else top.append(h('article', { class: 'panel' }, h('h2', { text: 'Next class' }), h('p', { class: 'empty', text: 'No class lesson is planned. Ask Claude to "teach ZM B1 S12 as L6" and it shows here.' })));
   top.append(h('article', { class: 'panel' }, h('h2', { text: 'Waiting on you' }),
     needs.length ? h('ul', { class: 'needs' }, needs.map(n => h('li', {}, h('i'), h('span', {}, n.href ? h('a', { href: n.href, text: n.t }) : h('b', { text: n.t }), h('span', { text: n.d })))))
@@ -631,7 +649,7 @@ function renderCourse(p) {
         h('span', { class: 'stt' }, ur(H.ur), h('span', { class: 'meta', text: (H.fasls || []).length ? `${a.name} B${b.from} ` + H.fasls.map(u => 'F' + u.split('.')[1]).join(', ') : `${a.name} B${b.from}` })),
         h('span', { class: 'steps3', title: STAGE_NAME[st] }, [1, 2, 3].map(i => h('i', { class: i <= lvl ? 'on' + i : '' }))),
         h('span', { class: 'sc' }, H.L ? h('span', { class: 'ltag' + (sel && sel.H === H ? '' : '') + (H.Ls === 'planned' && H === nextOf(b) ? ' next' : ''), text: `L${H.L} ${H.Ls === 'planned' ? (H === nextOf(b) ? 'next' : 'planned') : 'taught'}` }) : null,
-          m ? h('span', { class: 'tag ' + MK[m.status], text: mText(m) }) : null)));
+          m ? h('span', { class: 'tag ' + MK[m.status], text: mText(m) }) : null, lbadge(x))));
       if (open) body.append(detail(x));
     });
     if (!rows.length) body.append(h('p', { class: 'empty pad', text: 'No sabaq in this group.' }));

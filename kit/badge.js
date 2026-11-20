@@ -5,6 +5,9 @@
 
    const L = EX44Badge.read(layersJson);
    L.unit('ZM', 'B1 S1')                  -> 'ZM-B01-001' (or null)
+   L.unit('ZM', {bab: 1, hub: 1})         -> the same, from numbers: pages pass numbers, never build a label
+                                             (keys: bab with sabaq, lesson or hub; or atlas: 'U15.1'; when several
+                                             are given, the first that names a unit wins, in that order)
    L.badge('ZM', 'B1 S1', {view, kind})   -> {layer, word, tip, cls} or null
    L.html('ZM', 'B1 S1', {view, kind})    -> '<span class="ex44-badge ...">Preview</span>' or ''
    L.asOf(now)                            -> {text: 'as of 20 Nov, 10:55 UTC', old: false}
@@ -46,6 +49,14 @@
     return top < 0 ? null : ORDER[top];
   }
 
+  // Labels from numbers, so page code never glues one together: {bab: 2, sabaq: 5, hub: 5} -> ['B2 S5', 'B2 H5'].
+  function fromParts(p) {
+    if (p.atlas) return [String(p.atlas)];
+    if (p.bab == null) return [];
+    return [['sabaq', 'S'], ['lesson', 'L'], ['hub', 'H']].filter(([k]) => p[k] != null && p[k] !== '')
+      .map(([k, letter]) => 'B' + p.bab + ' ' + letter + p[k]); // namecheck: ok (the shared code itself)
+  }
+
   function read(data) {
     data = data || {};
     const courses = data.courses || {};
@@ -57,6 +68,10 @@
     }
     function unit(code, label) {
       const m = index[norm(code)];
+      if (label && typeof label === 'object' && !Array.isArray(label)) {
+        for (const l of fromParts(label)) { const v = unit(code, l); if (v) return v; }
+        return null;
+      }
       if (!m) return null;
       let k = norm(label);
       if (m[k] === undefined && k.indexOf(norm(code) + ' ') === 0) k = k.slice(norm(code).length + 1);

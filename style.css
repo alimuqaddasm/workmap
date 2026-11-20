@@ -423,3 +423,4 @@ a.ft:hover .ur{text-decoration:underline;text-underline-offset:4px}
 .xbulkbar .btn{color:var(--ink);background:#fff;border-color:#fff}
 .xbulkbar .btn.dark{background:var(--st-ref);border-color:var(--st-ref);color:#06302b}
 body:has(#xbulk:not([hidden])) .toast{bottom:96px}
+.bview{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap}
