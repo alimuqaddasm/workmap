@@ -6,7 +6,10 @@ It blocks EX-44 paths, briefs, plans and job notes, and keys or tokens. The same
   - on GitHub after the push, as `.github/publiccheck.py`, run by `.github/workflows/public-check.yml`.
 
   publiccheck.py scan [REF] [-C DIR]   check the files at REF (default HEAD) of the repo in DIR (default .)
-  publiccheck.py history [REF]         check every commit reachable from REF (GitHub runs this)
+  publiccheck.py history [REF]         check every commit reachable from REF (by hand)
+  publiccheck.py push BEFORE AFTER [BRANCH]
+                                       check only the commits this push brings (GitHub runs this, like the
+                                       hook: old history is not checked again, any new private thing fails)
   publiccheck.py hook                  pre-push hook mode: checks every commit the push sends
   publiccheck.py install DIR           put the pre-push hook into DIR's .git/hooks (touches no tracked file)
   publiccheck.py files DIR             write `.github/publiccheck.py` and the workflow into DIR's working tree
@@ -56,7 +59,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: python3 .github/publiccheck.py history HEAD
+      - run: python3 .github/publiccheck.py push "$BEFORE" "$AFTER" "$BRANCH"
+        env:
+          BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          AFTER: ${{ github.event.pull_request.head.sha || github.sha }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
 """
 MAIN_TOOL = os.path.join("/srv", "ws", "_repo", "ex44-system", "tools", "publiccheck.py")  # split: never matches itself
 HOOK = """#!/bin/sh
@@ -152,6 +159,19 @@ def main(argv):
         ref = rest[0] if rest else "HEAD"
         commits = git(".", "rev-list", ref).split()
         return report(scan_commits(".", commits), f"{len(commits)} commits of {ref}")
+    if cmd == "push" and len(rest) >= 2:
+        before, after = rest[0], rest[1]
+        branch = rest[2] if len(rest) > 2 else ""
+        known = before and before != ZERO and subprocess.run(
+            ["git", "cat-file", "-e", before + "^{commit}"], capture_output=True).returncode == 0
+        if known:
+            commits = git(".", "rev-list", after, "--not", before).split()
+        else:  # a new branch (or a force push): what no other branch on GitHub already holds
+            others = [r for r in git(".", "for-each-ref", "--format=%(refname)", "refs/remotes/origin").split()
+                      if r not in ("refs/remotes/origin/HEAD", "refs/remotes/origin/" + branch)]
+            commits = git(".", "rev-list", after, "--not", *others).split() if others else git(".", "rev-list", after).split()
+        commits = commits or [after]
+        return report(scan_commits(".", commits), f"{len(commits)} commit(s) this push brings")
     if cmd == "hook":
         bad = 0
         for line in sys.stdin.read().splitlines():
