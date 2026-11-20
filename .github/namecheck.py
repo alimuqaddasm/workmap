@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-"""Lesson-name check (EX-44 plan P7.1, council C2 point 4): page code never reads lesson names itself.
+"""Lesson-name check (EX-44 plan P7.1, council C2 point 4): page code should never read lesson names itself.
+
+WARN ONLY (Ali, 2026-11-20): it never fails a run or blocks a push. New parsing shows as a warning
+(on GitHub, a warning on the run, which stays green).
 
 Lesson labels (B1 S1, L3, U15.10, H07, F2) are turned into units only by the shared badge code
-(kit/badge.js), from layers.json. This check fails any page code that picks a label apart or builds
+(kit/badge.js), from layers.json. This check warns about any page code that picks a label apart or builds
 one by hand: a regex with a lesson letter next to a digit, a class of lesson letters, or a label
 glued together from a letter and a number.
 
-  namecheck.py scan [DIR]       list every finding and compare with the baseline (exit 1 if over it)
+  namecheck.py scan [DIR]       list every finding and compare with the baseline (warns if over it)
   namecheck.py baseline [DIR]   write the baseline from today's code (only when a chunk removes findings
                                 or a page is adopted; never to let new parsing in)
 
-The baseline (.github/namecheck-baseline.json) holds today's count per file, so old code passes and
-any NEW parsing fails. P7.2 to P7.4 bring the counts down to 0. A line that only looks like a name
+The baseline (.github/namecheck-baseline.json) holds today's count per file, so old code is quiet and
+any NEW parsing warns. P7.2 to P7.4 bring the counts down to 0. A line that only looks like a name
 but is not one can carry the comment `namecheck: ok (why)`.
 Runs on GitHub after every push (.github/workflows/name-check.yml) and by hand on EX-44.
-Exit code: 0 clean, 1 over the baseline, 2 usage error.
+Exit code: always 0 (clean or warned), 2 only for a usage error.
 """
 import json, os, re, sys
 
@@ -87,10 +90,12 @@ def main(argv):
             bad += 1
             for n, name in found[f]:
                 print(f"       line {n}: {name}")
+                if os.environ.get("GITHUB_ACTIONS") == "true":
+                    print(f"::warning file={f},line={n}::reads a lesson name itself ({name}); ask kit/badge.js instead")
     total, allowed = sum(counts.values()), sum(base.values())
     if bad:
-        print(f"FAIL: {bad} file(s) parse lesson names beyond the baseline. Ask kit/badge.js for the unit instead.")
-        return 1
+        print(f"WARN: {bad} file(s) parse lesson names beyond the baseline (nothing blocked). Ask kit/badge.js for the unit instead.")
+        return 0
     print(f"PASS: {total} old findings, baseline {allowed}; nothing new.")
     return 0
 

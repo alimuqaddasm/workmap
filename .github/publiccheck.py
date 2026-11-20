@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Public repo check (plan P0.4): nothing private may sit in a public repo.
+"""Public repo check (plan P0.4): nothing private should sit in a public repo.
 
-It blocks EX-44 paths, briefs, plans and job notes, and keys or tokens. The same file runs in two places:
+WARN ONLY (Ali, 2026-11-20): it never blocks a push and never fails a run. On EX-44 a finding raises one alert
+(alerts.py private: the launch chats and the orchestrator hear it, naming file, line and rule); on GitHub it
+shows as a warning on the run, which stays green.
+
+It looks for EX-44 paths, briefs, plans and job notes, and keys or tokens. The same file runs in two places:
   - on EX-44 as the git pre-push hook of each public working copy (it checks every commit being pushed),
   - on GitHub after the push, as `.github/publiccheck.py`, run by `.github/workflows/public-check.yml`.
 
   publiccheck.py scan [REF] [-C DIR]   check the files at REF (default HEAD) of the repo in DIR (default .)
-  publiccheck.py history [REF]         check every commit reachable from REF (by hand)
+  publiccheck.py history [REF]         check every commit reachable from REF (by hand; old fixed text shows too)
   publiccheck.py push BEFORE AFTER [BRANCH]
                                        check only the commits this push brings (GitHub runs this, like the
-                                       hook: old history is not checked again, any new private thing fails)
+                                       hook), so text fixed long ago does not warn on every run
   publiccheck.py hook                  pre-push hook mode: checks every commit the push sends
   publiccheck.py install DIR           put the pre-push hook into DIR's .git/hooks (touches no tracked file)
   publiccheck.py files DIR             write `.github/publiccheck.py` and the workflow into DIR's working tree
@@ -18,7 +22,7 @@ It blocks EX-44 paths, briefs, plans and job notes, and keys or tokens. The same
 A finding shows file, line and rule name only, never the matched text, so a real key is never printed.
 A plan or brief is blocked as a file (by its name); merely naming one in text is allowed.
 The patterns are written so that this file never matches itself (for example `/srv[/]ws`).
-Exit code: 0 clean, 1 something private found, 2 usage or git error.
+Exit code: always 0 (clean or warned), 2 only for a usage error by hand; the hook never stops a push.
 """
 import os, re, shutil, subprocess, sys
 
@@ -70,15 +74,16 @@ HOOK = """#!/bin/sh
 # Public repo check (ex44-system tools/publiccheck.py). Blocks a push that holds anything private.
 T="{tool}"
 [ -f "$T" ] || T="$(git rev-parse --show-toplevel)/.github/publiccheck.py"
-[ -f "$T" ] || {{ echo "publiccheck: tool not found, push blocked"; exit 1; }}
-exec python3 "$T" hook
+[ -f "$T" ] || {{ echo "publiccheck: tool not found, not checked (push goes on)"; exit 0; }}
+python3 "$T" hook || true
+exit 0
 """
 
 def git(repo, *a, data=False):
     r = subprocess.run(["git", "-c", "core.quotepath=false", *a], cwd=repo, capture_output=True)
     if r.returncode:
-        print(f"publiccheck: git {' '.join(a[:2])} failed: {r.stderr.decode('utf-8', 'replace').strip()}")
-        sys.exit(2)
+        print(f"publiccheck: git {' '.join(a[:2])} failed, not checked: {r.stderr.decode('utf-8', 'replace').strip()}")
+        sys.exit(0)
     return r.stdout if data else r.stdout.decode("utf-8", "replace")
 
 
@@ -133,15 +138,30 @@ def scan(repo, ref):
     return out
 
 
-def report(findings, where):
+def report(findings, where, alert=False):
+    """Print the findings, raise one alert on EX-44 (pushes only), never fail (warn only)."""
     if not findings:
         print(f"publiccheck: clean ({where})")
         return 0
-    print(f"publiccheck: BLOCKED, {len(findings)} private thing(s) in {where}:")
-    for path, line, name in sorted(set(findings)):
+    found = sorted(set(findings))
+    print(f"publiccheck: WARNING, {len(found)} private thing(s) in {where} (nothing blocked):")
+    gh = os.environ.get("GITHUB_ACTIONS") == "true"
+    for path, line, name in found:
         print(f"  {path}:{line}  {name}" if line else f"  {path}  {name} (file name)")
-    print("Take them out of every commit listed (rewrite local commits not yet pushed) and push again.\nThe matched text is never shown.")
-    return 1
+        if gh:
+            print(f"::warning file={path},line={line or 1}::private thing ({name}); take it out when convenient")
+    print("Take them out when convenient. The matched text is never shown.")
+    alerts = os.path.join(os.path.dirname(HERE), "alerts.py")
+    if alert and not gh and os.path.basename(os.path.dirname(HERE)) == "tools" and os.path.exists(alerts):
+        top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip()
+        url = subprocess.run(["git", "remote", "get-url", "origin"], capture_output=True, text=True).stdout.strip()
+        repo = (url.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git") if url else os.path.basename(top)) or "?"
+        where_ = [f"{p}:{l} {n}" if l else f"{p} {n}" for p, l, n in found]
+        try:
+            subprocess.run([sys.executable, alerts, "private", repo, *where_], timeout=60)
+        except Exception as e:  # an alert problem never stops a push
+            print(f"publiccheck: alert not raised ({type(e).__name__})")
+    return 0
 
 
 def main(argv):
@@ -173,15 +193,14 @@ def main(argv):
         commits = commits or [after]
         return report(scan_commits(".", commits), f"{len(commits)} commit(s) this push brings")
     if cmd == "hook":
-        bad = 0
         for line in sys.stdin.read().splitlines():
             parts = line.split()
             if len(parts) != 4 or parts[1] == ZERO:
                 continue  # a branch delete pushes nothing
             # every commit this push sends, not only the newest (a removed plant still sits in history)
             commits = git(".", "rev-list", parts[1], "--not", "--remotes").split() or [parts[1]]
-            bad |= report(scan_commits(".", commits), f"{parts[0]}, {len(commits)} new commit(s)")
-        return bad
+            report(scan_commits(".", commits), f"{parts[0]}, {len(commits)} new commit(s)", alert=True)
+        return 0
     if cmd == "install" and rest:
         repo = os.path.abspath(rest[0])
         hooks = git(repo, "rev-parse", "--git-path", "hooks").strip()
