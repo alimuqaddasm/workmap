@@ -424,3 +424,17 @@ a.ft:hover .ur{text-decoration:underline;text-underline-offset:4px}
 .xbulkbar .btn.dark{background:var(--st-ref);border-color:var(--st-ref);color:#06302b}
 body:has(#xbulk:not([hidden])) .toast{bottom:96px}
 .bview{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* S4: marks beside the badge (Ali's view only) and the All courses list */
+.bset{display:inline-flex;gap:4px;flex-wrap:wrap;align-items:center}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:0 14px;min-height:36px;display:inline-flex;align-items:center;font-size:13px;font-weight:600;color:var(--ink-2);text-decoration:none}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.allcols{columns:2 420px;column-gap:18px}
+.allcard{break-inside:avoid;margin-bottom:18px}
+.allh{display:flex;justify-content:space-between;padding:14px 22px;border-bottom:1px solid var(--line)}
+.allh h2{font-size:16px}
+.allrow{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:10px 22px;border-bottom:1px solid var(--line-3);min-height:48px}
+.allrow:last-child{border-bottom:0}
+.allt{font-size:14.5px;font-weight:500}
+@media (max-width:700px){.allcols{columns:1}}

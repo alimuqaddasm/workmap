@@ -24,11 +24,13 @@
     branch: 'A chat is still working on it.'
   };
   const MENTOR = { approved: 1, preview: 1 };
-  const OLD_HOURS = 6;
+  const OLD_HOURS = 2;   // S4 (Ali, 2026-11-22): amber past 2 hours
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const CSS = '.ex44-badge{display:inline-block;font:600 11px/1.6 system-ui,sans-serif;padding:0 6px;border-radius:8px;vertical-align:middle;white-space:nowrap}' +
     '.ex44-badge--approved{background:#d9f2e1;color:#14532d}.ex44-badge--preview{background:#fdf0c9;color:#713f12}' +
     '.ex44-badge--main{background:#e3e8f4;color:#1e3a8a}.ex44-badge--branch{background:#eee;color:#444}' +
+    '.ex44-mark{display:inline-flex;gap:4px;align-items:center;font:600 11px/1.6 system-ui,sans-serif;padding:0 7px;border-radius:8px;white-space:nowrap;vertical-align:middle;margin-left:4px}' +
+    '.ex44-mark--held{border:1px dashed currentColor;background:transparent}.ex44-mark--pdf{background:#e3f2ef;color:#0b5f57}.ex44-mark--drive{font-weight:500;opacity:.7;padding:0 2px}' +
     '.ex44-asof{font:12px system-ui,sans-serif;opacity:.75}.ex44-asof--old{color:#b45309;opacity:1}';
 
   // Label normalising lives here and nowhere else: case, spaces, dashes, leading zeros (S01 = S1).
@@ -92,6 +94,25 @@
       if (view === 'mentor' && !MENTOR[layer]) return null;
       return { layer, word: WORDS[layer], tip: TIPS[layer], cls: 'ex44-badge ex44-badge--' + layer };
     }
+    // S4: Ali's view only (opt.view === 'all'). The marks of a lesson across its kinds: held, PDF back from la57, on Drive.
+    function marks(code, label, opt) {
+      opt = opt || {};
+      if ((opt.view || 'mentor') !== 'all') return [];
+      let ids = unit(code, label);
+      if (!ids) return [];
+      if (!Array.isArray(ids)) ids = [ids];
+      const units = (courses[(Object.keys(courses).find(k => norm(k) === norm(code)))] || {}).units || {};
+      const has = { held: false, pdf: false, drive: false };
+      for (const id of ids) for (const k of Object.values((units[id] || {}).kinds || {})) { if (k.held) has.held = true; if (k.pdf) has.pdf = true; if (k.drive) has.drive = true; }
+      const out = [];
+      if (has.held) out.push({ key: 'held', word: 'Held, waiting for your save', tip: 'A held job has this work; nothing reaches main until you say save.', cls: 'ex44-mark ex44-mark--held' });
+      if (has.pdf) out.push({ key: 'pdf', word: 'PDF back from la57', tip: 'la57 made the PDF and it is beside its source.', cls: 'ex44-mark ex44-mark--pdf' });
+      if (has.drive) out.push({ key: 'drive', word: 'on Drive', tip: 'The mentor can open it on Drive.', cls: 'ex44-mark ex44-mark--drive' });
+      return out;
+    }
+    function marksHtml(code, label, opt) {
+      return marks(code, label, opt).map(m => `<span class="${m.cls}" title="${esc(m.tip)}">${esc(m.word)}</span>`).join('');
+    }
     function html(code, label, opt) {
       const b = badge(code, label, opt);
       return b ? `<span class="${b.cls}" title="${esc(b.tip)}">${esc(b.word)}</span>` : '';
@@ -107,7 +128,7 @@
       const a = asOf(now);
       return `<span class="ex44-asof${a.old ? ' ex44-asof--old' : ''}">${esc(a.text)}</span>`;
     }
-    return { unit, badge, html, asOf, asOfHtml, made: data.made || null };
+    return { unit, badge, html, marks, marksHtml, asOf, asOfHtml, made: data.made || null };
   }
 
   function injectCss(doc) {

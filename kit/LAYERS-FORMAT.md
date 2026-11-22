@@ -39,3 +39,8 @@ P6.3 had written any; P6.3 writes exactly these names, or changes this file and 
 
 A lesson's badge is its highest layer: Approved, then Preview, then In main, then Draft (on a branch).
 The mentor view (the default) shows only Approved and Preview.
+
+## S4 marks (2026-11-22, Ali's view only)
+Per kind, written only when true: `held` (a held job's branch has it), `pdf` (a PDF sits beside its source),
+`drive` (the Drive ledger knows a file of this kind). `badge.js` `marks()` / `marksHtml()` return them only when
+the view is `all`; the mentor view shows none. The "as of" stamp turns amber after 2 hours.

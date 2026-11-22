@@ -79,9 +79,9 @@ const fcode = (a, u) => { const [b, f] = u.replace('U', '').split('.'); return `
 const fasl = (a, u) => { const [b] = u.replace('U', '').split('.'); const bb = a.babs.find(x => x.n === +b); return bb && bb.fasls.find(x => x.id === u.replace('U', '')); };
 
 // ---------- routing ----------
-function parse() { const [v, q] = location.hash.slice(1).split('?'); return { view: v === 'map' ? 'atlas' : ['atlas', 'course', 'ex44'].includes(v) ? v : 'week', p: new URLSearchParams(q || '') }; }
+function parse() { const [v, q] = location.hash.slice(1).split('?'); return { view: v === 'map' ? 'atlas' : ['atlas', 'course', 'all', 'ex44'].includes(v) ? v : 'week', p: new URLSearchParams(q || '') }; }
 function go(view, params) { const q = new URLSearchParams(); Object.entries(params || {}).forEach(([k, v]) => { if (v != null && v !== '') q.set(k, v); }); const next = '#' + view + (q.toString() ? '?' + q : ''); if (location.hash === next) route(); else location.hash = next; }
-function route() { if (!S.data) return; const { view, p } = parse(); side(view, p); if (view === 'ex44') { location.replace(EX44_HOME); return; } if (view === 'atlas') renderAtlas(p); else if (view === 'course') renderCourse(p); else renderWeek(p); screen('app'); }
+function route() { if (!S.data) return; const { view, p } = parse(); side(view, p); if (view === 'ex44') { location.replace(EX44_HOME); return; } if (view === 'atlas') renderAtlas(p); else if (view === 'course') renderCourse(p); else if (view === 'all') renderAll(); else renderWeek(p); screen('app'); }
 window.addEventListener('hashchange', route);
 
 // ---------- load ----------
@@ -109,8 +109,12 @@ const BV = 'workmap.badges';
 const badgeView = () => { try { return localStorage.getItem(BV) === 'all' ? 'all' : 'mentor'; } catch (e) { return 'mentor'; } };
 function setBadgeView(v) { try { v === 'all' ? localStorage.setItem(BV, 'all') : localStorage.removeItem(BV); } catch (e) {} route(); }
 function lbadge(x) {
-  const b = S.layers && S.layers.badge(x.c.code, { bab: x.b.n, sabaq: x.H.h, hub: x.H.h }, { view: badgeView() });
-  return b ? h('span', { class: b.cls, title: b.tip, text: b.word }) : null;
+  const parts = { bab: x.b.n, sabaq: x.H.h, hub: x.H.h }, v = badgeView();
+  const b = S.layers && S.layers.badge(x.c.code, parts, { view: v });
+  const ms = S.layers ? S.layers.marks(x.c.code, parts, { view: v }) : [];   // S4: Ali's view only (All layers)
+  if (!b && !ms.length) return null;
+  return h('span', { class: 'bset' }, b ? h('span', { class: b.cls, title: b.tip, text: b.word }) : null,
+    ms.map(m => h('span', { class: m.cls, title: m.tip, text: m.word })));
 }
 function badgeBar() {
   if (typeof EX44Badge !== 'undefined') EX44Badge.injectCss(document);
@@ -127,8 +131,9 @@ function side(view) {
     h('nav', { class: 'tabs', 'aria-label': 'Views' },
       h('a', { href: '#week', 'aria-current': view === 'week' ? 'page' : null, text: 'This week' }),
       h('a', { href: '#course', 'aria-current': view === 'course' ? 'page' : null, text: 'Courses' }),
+      h('a', { href: '#all', 'aria-current': view === 'all' ? 'page' : null, text: 'All courses' }),
       h('a', { href: '#atlas', 'aria-current': view === 'atlas' ? 'page' : null, text: 'Atlases' }),
-      h('a', { href: EX44_HOME, title: 'The EX-44 Home, its own page', text: 'EX-44' })),
+      h('a', { href: EX44_HOME, title: 'The EX-44 Home, its own page', text: 'EX-44 Home' })),
     h('span', { class: 'upd' }, h('span', { text: 'Updated ' + fmtWhen(S.data.made) }), badgeBar(),
       h('button', { type: 'button', class: 'linkbtn', onclick: () => { setKey(''); S.data = null; connect('Your key was removed from this browser.'); }, text: 'Forget my key' })));
 }
@@ -323,6 +328,24 @@ function detail(x) {
 function faslState(f) { return f.br ? 'br' : (f.al || []).includes('built') ? 'b' : (f.al || []).includes('written') ? 'w' : (f.al || []).length ? 'o' : 'n'; }
 const F_WORD = { b: 'built', w: 'written', br: 'only on a branch', o: 'planned, not built', n: 'not in the atlas lesson plan' };
 function usersOf(atlasId, babN) { const o = []; S.data.courses.forEach(c => c.babs.forEach(b => { if (c.atlas === atlasId && b.from === babN) o.push({ c, b }); })); return o; }
+// ---------- All courses (S4): every course repo of the course list, from workmap.json "repos" ----------
+function renderAll() {
+  const v = $('#view'); v.replaceChildren();
+  const R = S.data.repos || [], HUBID = { zm: 'maarif-zm', th: 'maarif-tauheed', ma: 'maarif-mahdaviyat' };
+  const repos = new Set(R.map(r => r.repo));
+  v.append(h('header', { class: 'head' }, h('h1', { text: 'All courses' }),
+    h('p', { class: 'lede', text: `${R.length} courses from ${repos.size} repos. The hub courses open their sabaq page; the rest are listed with their repo and the number of lessons found.` })));
+  const groups = []; R.forEach(r => { let g = groups.find(x => x.n === r.group); if (!g) groups.push(g = { n: r.group, r: [] }); g.r.push(r); });
+  v.append(h('div', { class: 'chips' }, h('span', { class: 'chip on', text: 'All ' + R.length }), groups.map(g => h('a', { class: 'chip', href: '#all-' + g.n.replace(/\W+/g, '-'), text: `${g.n} ${g.r.length}` }))));
+  const cols = h('div', { class: 'allcols' });
+  groups.forEach(g => cols.append(h('section', { class: 'panel flush allcard', id: 'all-' + g.n.replace(/\W+/g, '-') },
+    h('div', { class: 'allh' }, h('h2', { text: g.n }), h('span', { class: 'muted small', text: String(g.r.length) })),
+    g.r.map(r => { const c = S.data.courses.find(x => HUBID[x.id] === r.id);
+      return h('div', { class: 'allrow' }, h('div', {}, h('div', { class: 'allt', text: r.name }), h('div', { class: 'muted small', text: `${r.repo}${r.units ? ' \u00b7 ' + r.units + ' lessons' : ''}${r.last ? ' \u00b7 last change ' + fmtDay(r.last) : ''}` })),
+        c ? h('a', { class: 'ltag next', href: '#course?c=' + c.id, text: 'Detail page' }) : h('span', { class: 'muted small', text: 'In the list' })); }))));
+  v.append(cols);
+}
+
 function renderAtlas(p) {
   const v = $('#view'); v.replaceChildren();
   const order = ['mahdaviyat', 'tauheed', 'akhlaq', 'adl', 'maad', 'nubuwat', 'imamat'];
