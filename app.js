@@ -91,7 +91,10 @@ async function load() {
     const [w, b] = await Promise.all([readData('workmap.json'), readJson('marks.json')]);
     S.data = w; S.board = { workmap: b.data || {} }; S.boardSha = b.sha;
     try { S.reading = await readData('reading/index.json'); } catch (e) { S.reading = null; }
-    try { S.layers = EX44Badge.read((await readJson('layers.json')).data); } catch (e) { S.layers = null; }
+    S.layers = null; S.layersWhy = '';   // one retry; a failure is shown in the stamp, never hidden
+    for (let i = 0; i < 2 && !S.layers; i++) {
+      try { if (i) await new Promise(r => setTimeout(r, 1200)); S.layers = EX44Badge.read((await readJson('layers.json')).data); } catch (e) { S.layersWhy = layersWhy(e); }
+    }
     route();
   } catch (e) {
     if (e.status === 401 || e.status === 404) { setKey(''); connect(e.status === 404 ? 'This key cannot open hub-data and hub-notes. Make a key for those two repos (steps above) and paste it here.' : e.message); return; }
@@ -116,10 +119,12 @@ function lbadge(x) {
   return h('span', { class: 'bset' }, b ? h('span', { class: b.cls, title: b.tip, text: b.word }) : null,
     ms.map(m => h('span', { class: m.cls, title: m.tip, text: m.word })));
 }
+const layersWhy = e => (e && e.status ? 'GitHub answered ' + e.status + ([401, 403, 404].includes(e.status) ? ', this key may not reach hub-notes' : '') : ((e && e.message) || 'unknown'));
 function badgeBar() {
+  const why = !S.layers && S.layersWhy ? ' (' + S.layersWhy + ')' : '';
   if (typeof EX44Badge !== 'undefined') EX44Badge.injectCss(document);
   const a = S.layers ? S.layers.asOf() : { text: 'not known yet', old: true }, v = badgeView();
-  return h('span', { class: 'bview' }, h('span', { class: 'ex44-asof' + (a.old ? ' ex44-asof--old' : ''), title: 'When EX-44 last measured each lesson\'s layer', text: 'Badges ' + a.text }),
+  return h('span', { class: 'bview' }, h('span', { class: 'ex44-asof' + (a.old ? ' ex44-asof--old' : ''), title: 'When EX-44 last measured each lesson\'s layer', text: 'Badges ' + a.text + why }),
     h('button', { type: 'button', class: 'linkbtn', 'aria-pressed': v === 'all' ? 'true' : 'false', title: v === 'all' ? 'Back to the mentor view: Preview and Approved only' : 'Also show In main and Draft',
       onclick: () => setBadgeView(v === 'all' ? 'mentor' : 'all'), text: v === 'all' ? 'All layers' : 'Mentor view' }));
 }
