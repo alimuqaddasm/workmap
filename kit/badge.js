@@ -60,13 +60,13 @@
   }
 
   function read(data) {
-    data = data || {};
-    const courses = data.courses || {};
+    data = data && typeof data === 'object' ? data : {};
+    const courses = data.courses && typeof data.courses === 'object' ? data.courses : {};
     const index = {};
     for (const code of Object.keys(courses)) {
-      const c = courses[code], m = index[norm(code)] = {};
+      const c = courses[code] || {}, m = index[norm(code)] = {};
       for (const id of Object.keys(c.units || {})) m[norm(id)] = id;
-      for (const a of Object.keys(c.aliases || {})) m[norm(a)] = c.aliases[a];
+      for (const a of Object.keys(c.aliases || {})) if (c.aliases[a] != null) m[norm(a)] = c.aliases[a];
     }
     function unit(code, label) {
       const m = index[norm(code)];
@@ -88,7 +88,7 @@
       if (!Array.isArray(ids)) ids = [ids];
       const units = (courses[(Object.keys(courses).find(k => norm(k) === norm(code)))] || {}).units || {};
       let top = -1;
-      for (const id of ids) { const l = best((units[id] || {}).kinds, opt.kind); const i = ORDER.indexOf(l); if (i >= 0 && (top < 0 || i < top)) top = i; }
+      for (const id of ids) { const l = best((units[id] || {}).kinds || {}, opt.kind); const i = ORDER.indexOf(l); if (i >= 0 && (top < 0 || i < top)) top = i; }
       if (top < 0) return null;
       const layer = ORDER[top];
       if (view === 'mentor' && !MENTOR[layer]) return null;

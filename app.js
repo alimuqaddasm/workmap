@@ -38,7 +38,7 @@ const screen = id => SCREENS.forEach(x => { $('#' + x).hidden = x !== id; });
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 3500); }
 
 // ---------- GitHub ----------
-const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g, '')), c => c.charCodeAt(0)));
+const b64dec = s => new TextDecoder().decode(Uint8Array.from(atob(String(s || '').replace(/\n/g, '')), c => c.charCodeAt(0)));
 const b64enc = s => { const b = new TextEncoder().encode(s); let o = ''; for (let i = 0; i < b.length; i += 0x8000) o += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(o); };
 async function gh(path, opts, repo, raw) {
   let r;
@@ -93,7 +93,7 @@ async function load() {
     try { S.reading = await readData('reading/index.json'); } catch (e) { S.reading = null; }
     S.layers = null; S.layersWhy = '';   // one retry; a failure is shown in the stamp, never hidden
     for (let i = 0; i < 2 && !S.layers; i++) {
-      try { if (i) await new Promise(r => setTimeout(r, 1200)); S.layers = EX44Badge.read((await readJson('layers.json')).data); } catch (e) { S.layersWhy = layersWhy(e); }
+      try { if (i) await new Promise(r => setTimeout(r, 1200)); S.layers = EX44Badge.read(JSON.parse(await gh('layers.json', null, NOTES, true))); } catch (e) { S.layersWhy = layersWhy(e); }
     }
     route();
   } catch (e) {
